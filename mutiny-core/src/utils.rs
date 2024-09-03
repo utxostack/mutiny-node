@@ -305,17 +305,17 @@ pub fn is_hodl_invoice(invoice: &Bolt11Invoice) -> bool {
     HODL_INVOICE_NODES.contains(&pubkey.as_str())
 }
 
-/// Coverts from our Bolt11Invoice type to fedimint's
-pub fn convert_to_fedimint_invoice(
-    invoice: &Bolt11Invoice,
-) -> fedimint_ln_common::lightning_invoice::Bolt11Invoice {
-    fedimint_ln_common::lightning_invoice::Bolt11Invoice::from_str(&invoice.to_string())
-        .expect("just converting types")
-}
+// /// Coverts from our Bolt11Invoice type to fedimint's
+// pub fn convert_to_fedimint_invoice(
+//     invoice: &Bolt11Invoice,
+// ) -> fedimint_ln_common::lightning_invoice::Bolt11Invoice {
+//     fedimint_ln_common::lightning_invoice::Bolt11Invoice::from_str(&invoice.to_string())
+//         .expect("just converting types")
+// }
 
-/// Coverts from fedimint's Bolt11Invoice type to ours
-pub fn convert_from_fedimint_invoice(
-    invoice: &fedimint_ln_common::lightning_invoice::Bolt11Invoice,
-) -> Bolt11Invoice {
-    Bolt11Invoice::from_str(&invoice.to_string()).expect("just converting types")
-}
+// /// Coverts from fedimint's Bolt11Invoice type to ours
+// pub fn convert_from_fedimint_invoice(
+//     invoice: &fedimint_ln_common::lightning_invoice::Bolt11Invoice,
+// ) -> Bolt11Invoice {
+//     Bolt11Invoice::from_str(&invoice.to_string()).expect("just converting types")
+// }

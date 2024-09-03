@@ -312,11 +312,11 @@ impl From<serde_json::error::Error> for MutinyJsError {
     }
 }
 
-impl From<moksha_core::error::MokshaCoreError> for MutinyJsError {
-    fn from(e: moksha_core::error::MokshaCoreError) -> Self {
-        e.into()
-    }
-}
+// impl From<moksha_core::error::MokshaCoreError> for MutinyJsError {
+//     fn from(e: moksha_core::error::MokshaCoreError) -> Self {
+//         e.into()
+//     }
+// }
 
 impl From<MutinyJsError> for JsValue {
     fn from(e: MutinyJsError) -> Self {

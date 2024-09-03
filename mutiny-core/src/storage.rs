@@ -1,10 +1,10 @@
+use crate::logging::MutinyLogger;
 use crate::nodemanager::{ChannelClosure, NodeStorage};
 use crate::utils::{now, spawn};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
-use crate::{blindauth::TokenStorage, logging::MutinyLogger};
 use crate::{
     encrypt::{decrypt_with_password, encrypt, encryption_key_from_pass, Cipher},
-    federation::FederationStorage,
+    // federation::FederationStorage,
     DEVICE_LOCK_INTERVAL_SECS,
 };
 use crate::{
@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use bdk::chain::{Append, PersistBackend};
 use bip39::Mnemonic;
 use bitcoin::{secp256k1::ThirtyTwoByteHash, Txid};
-use fedimint_ln_common::bitcoin::hashes::hex::ToHex;
+// use fedimint_ln_common::bitcoin::hashes::hex::ToHex;
 use futures_util::lock::Mutex;
 use hex_conservative::*;
 use lightning::{ln::PaymentHash, util::logger::Logger};
@@ -481,37 +481,37 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
             .await
     }
 
-    /// Gets the federation indexes from storage
-    fn get_federations(&self) -> Result<FederationStorage, MutinyError> {
-        let res: Option<FederationStorage> = self.get_data(FEDERATIONS_KEY)?;
-        match res {
-            Some(f) => Ok(f),
-            None => Ok(FederationStorage::default()),
-        }
-    }
+    // /// Gets the federation indexes from storage
+    // fn get_federations(&self) -> Result<FederationStorage, MutinyError> {
+    //     let res: Option<FederationStorage> = self.get_data(FEDERATIONS_KEY)?;
+    //     match res {
+    //         Some(f) => Ok(f),
+    //         None => Ok(FederationStorage::default()),
+    //     }
+    // }
 
-    /// Inserts the federation indexes into storage
-    async fn insert_federations(&self, federations: FederationStorage) -> Result<(), MutinyError> {
-        let version = Some(federations.version);
-        self.set_data_async(FEDERATIONS_KEY.to_string(), federations, version)
-            .await
-    }
+    // /// Inserts the federation indexes into storage
+    // async fn insert_federations(&self, federations: FederationStorage) -> Result<(), MutinyError> {
+    //     let version = Some(federations.version);
+    //     self.set_data_async(FEDERATIONS_KEY.to_string(), federations, version)
+    //         .await
+    // }
 
-    /// Gets the token storage
-    fn get_token_storage(&self) -> Result<TokenStorage, MutinyError> {
-        let res: Option<TokenStorage> = self.get_data(SERVICE_TOKENS)?;
-        match res {
-            Some(f) => Ok(f),
-            None => Ok(TokenStorage::default()),
-        }
-    }
+    // /// Gets the token storage
+    // fn get_token_storage(&self) -> Result<TokenStorage, MutinyError> {
+    //     let res: Option<TokenStorage> = self.get_data(SERVICE_TOKENS)?;
+    //     match res {
+    //         Some(f) => Ok(f),
+    //         None => Ok(TokenStorage::default()),
+    //     }
+    // }
 
-    /// Inserts the tokens into storage
-    async fn insert_token_storage(&self, tokens: TokenStorage) -> Result<(), MutinyError> {
-        let version = Some(tokens.version);
-        self.set_data_async(SERVICE_TOKENS.to_string(), tokens, version)
-            .await
-    }
+    // /// Inserts the tokens into storage
+    // async fn insert_token_storage(&self, tokens: TokenStorage) -> Result<(), MutinyError> {
+    //     let version = Some(tokens.version);
+    //     self.set_data_async(SERVICE_TOKENS.to_string(), tokens, version)
+    //         .await
+    // }
 
     /// Get the current fee estimates from storage
     /// The key is block target, the value is the fee in satoshis per byte
@@ -885,9 +885,9 @@ impl MutinyStorage for () {
 
 pub(crate) fn transaction_details_key(internal_id: Txid) -> String {
     format!(
-        "{}{}",
+        "{}{:#}",
         TRANSACTION_DETAILS_PREFIX_KEY,
-        internal_id.to_raw_hash().to_hex(),
+        internal_id.to_raw_hash(),
     )
 }
 

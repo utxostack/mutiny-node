@@ -11,8 +11,8 @@ use bitcoin::hashes::hex::FromHex;
 use bitcoin::key::Parity;
 use bitcoin::secp256k1::ThirtyTwoByteHash;
 use bitcoin::{bip32::ExtendedPrivKey, secp256k1::Secp256k1};
-use fedimint_core::api::InviteCode;
-use fedimint_core::config::FederationId;
+// use fedimint_core::api::InviteCode;
+// use fedimint_core::config::FederationId;
 use futures::{pin_mut, select, FutureExt};
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_warn};
@@ -55,9 +55,9 @@ const DISABLE_ZAPS_EVENT_KIND: Kind = Kind::Custom(93_188);
 pub struct RegisterRequest {
     pub name: Option<String>,
     pub pubkey: String,
-    pub federation_invite_code: String,
-    pub msg: tbs::Message,
-    pub sig: tbs::Signature,
+    // pub federation_invite_code: String,
+    // pub msg: tbs::Message,
+    // pub sig: tbs::Signature,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -71,7 +71,7 @@ pub struct HermesClient<S: MutinyStorage> {
     pub public_key: nostr::PublicKey,
     pub client: Client,
     http_client: reqwest::Client,
-    pub(crate) federations: Arc<RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>>,
+    // pub(crate) federations: Arc<RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>>,
     blind_auth: Arc<BlindAuthClient<S>>,
     base_url: String,
     // bool represents whether or not it was successfully checked
@@ -85,7 +85,7 @@ impl<S: MutinyStorage> HermesClient<S> {
     pub async fn new(
         xprivkey: ExtendedPrivKey,
         base_url: String,
-        federations: Arc<RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>>,
+        // federations: Arc<RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>>,
         blind_auth: Arc<BlindAuthClient<S>>,
         storage: &S,
         logger: Arc<MutinyLogger>,
@@ -126,7 +126,7 @@ impl<S: MutinyStorage> HermesClient<S> {
             client,
             http_client: reqwest::Client::new(),
             base_url,
-            federations,
+            // federations,
             blind_auth,
             current_address: Arc::new(RwLock::new((None, false))),
             storage: storage.clone(),
@@ -157,7 +157,7 @@ impl<S: MutinyStorage> HermesClient<S> {
         let nostr_client_check_clone = self.client.clone();
         let base_url_check_clone = self.base_url.clone();
         let current_address_check_clone = self.current_address.clone();
-        let first_federation = self.get_first_federation().await.clone();
+        // let first_federation = self.get_first_federation().await.clone();
         utils::spawn(async move {
             let mut count = 1;
             loop {
@@ -183,79 +183,79 @@ impl<S: MutinyStorage> HermesClient<S> {
                             *c = (o.name.clone(), true);
                         }
 
-                        // check that federation is still the same
-                        if let Some(f) = first_federation {
-                            // if a registered federation exists and is what we have and zaps are enabled
-                            // then there is no reason to update
-                            if o.federation_id.is_some_and(|id| id == f.federation_id)
-                                && !o.disabled_zaps
-                            {
-                                break;
-                            }
+                        // // check that federation is still the same
+                        // if let Some(f) = first_federation {
+                        //     // if a registered federation exists and is what we have and zaps are enabled
+                        //     // then there is no reason to update
+                        //     if o.federation_id.is_some_and(|id| id == f.federation_id)
+                        //         && !o.disabled_zaps
+                        //     {
+                        //         break;
+                        //     }
 
-                            // user has a federation registered but is different than current
-                            // so we should update it
-                            log_info!(
-                                logger_check_clone,
-                                "registered federation is different, changing {:?} to {:?}",
-                                o.federation_id,
-                                f.federation_id
-                            );
-                            match change_federation_info(
-                                &http_client_check_clone,
-                                &base_url_check_clone,
-                                nostr_client_check_clone,
-                                current_address_check_clone,
-                                &f.invite_code,
-                                &logger_check_clone,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    log_debug!(
-                                        logger_check_clone,
-                                        "changed federation successfully"
-                                    );
-                                }
-                                Err(e) => {
-                                    log_error!(
-                                        logger_check_clone,
-                                        "could not change the federation: {e}"
-                                    );
-                                }
-                            }
-                        } else {
-                            // handle the case where the user no longer has a federation
-                            // if user is already disabled, no need to call again
-                            if !o.disabled_zaps {
-                                log_info!(
-                                    logger_check_clone,
-                                    "user no longer has a federation, disabling zaps"
-                                );
-                                match disable_zaps(
-                                    &http_client_check_clone,
-                                    &base_url_check_clone,
-                                    nostr_client_check_clone,
-                                    current_address_check_clone,
-                                    &logger_check_clone,
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        log_debug!(
-                                            logger_check_clone,
-                                            "disabled zaps successfully"
-                                        );
-                                    }
-                                    Err(e) => {
-                                        log_error!(
-                                            logger_check_clone,
-                                            "could not disable zaps: {e}"
-                                        );
-                                    }
-                                }
-                            }
-                        }
+                        //     // user has a federation registered but is different than current
+                        //     // so we should update it
+                        //     log_info!(
+                        //         logger_check_clone,
+                        //         "registered federation is different, changing {:?} to {:?}",
+                        //         o.federation_id,
+                        //         f.federation_id
+                        //     );
+                        //     match change_federation_info(
+                        //         &http_client_check_clone,
+                        //         &base_url_check_clone,
+                        //         nostr_client_check_clone,
+                        //         current_address_check_clone,
+                        //         &f.invite_code,
+                        //         &logger_check_clone,
+                        //     )
+                        //     .await
+                        //     {
+                        //         Ok(_) => {
+                        //             log_debug!(
+                        //                 logger_check_clone,
+                        //                 "changed federation successfully"
+                        //             );
+                        //         }
+                        //         Err(e) => {
+                        //             log_error!(
+                        //                 logger_check_clone,
+                        //                 "could not change the federation: {e}"
+                        //             );
+                        //         }
+                        //     }
+                        // } else {
+                        //     // handle the case where the user no longer has a federation
+                        //     // if user is already disabled, no need to call again
+                        //     if !o.disabled_zaps {
+                        //         log_info!(
+                        //             logger_check_clone,
+                        //             "user no longer has a federation, disabling zaps"
+                        //         );
+                        //         match disable_zaps(
+                        //             &http_client_check_clone,
+                        //             &base_url_check_clone,
+                        //             nostr_client_check_clone,
+                        //             current_address_check_clone,
+                        //             &logger_check_clone,
+                        //         )
+                        //         .await
+                        //         {
+                        //             Ok(_) => {
+                        //                 log_debug!(
+                        //                     logger_check_clone,
+                        //                     "disabled zaps successfully"
+                        //                 );
+                        //             }
+                        //             Err(e) => {
+                        //                 log_error!(
+                        //                     logger_check_clone,
+                        //                     "could not disable zaps: {e}"
+                        //                 );
+                        //             }
+                        //         }
+                        //     }
+                        // }
 
                         break;
                     }
@@ -384,20 +384,20 @@ impl<S: MutinyStorage> HermesClient<S> {
         Ok(())
     }
 
-    pub async fn change_federation_info(
-        &self,
-        invite_code: &InviteCode,
-    ) -> Result<(), MutinyError> {
-        change_federation_info(
-            &self.http_client,
-            &self.base_url,
-            self.client.clone(),
-            self.current_address.clone(),
-            invite_code,
-            &self.logger,
-        )
-        .await
-    }
+    // pub async fn change_federation_info(
+    //     &self,
+    //     invite_code: &InviteCode,
+    // ) -> Result<(), MutinyError> {
+    //     change_federation_info(
+    //         &self.http_client,
+    //         &self.base_url,
+    //         self.client.clone(),
+    //         self.current_address.clone(),
+    //         invite_code,
+    //         &self.logger,
+    //     )
+    //     .await
+    // }
 
     pub async fn disable_zaps(&self) -> Result<(), MutinyError> {
         disable_zaps(
@@ -479,58 +479,58 @@ impl<S: MutinyStorage> HermesClient<S> {
         }
     }
 
-    async fn get_first_federation(&self) -> Option<FederationIdentity> {
-        let federations = self.federations.read().await;
-        match federations.iter().next() {
-            Some((_, n)) => Some(n.get_mutiny_federation_identity().await),
-            None => None,
-        }
-    }
+    // async fn get_first_federation(&self) -> Option<FederationIdentity> {
+    //     let federations = self.federations.read().await;
+    //     match federations.iter().next() {
+    //         Some((_, n)) => Some(n.get_mutiny_federation_identity().await),
+    //         None => None,
+    //     }
+    // }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChangeFederationRequest {
     pub name: Option<String>,
-    pub federation_id: Option<FederationId>,
+    // pub federation_id: Option<FederationId>,
 }
 
-async fn change_federation_info(
-    http_client: &reqwest::Client,
-    base_url: &str,
-    nostr_client: Client,
-    current_address: Arc<RwLock<(Option<String>, bool)>>,
-    invite_code: &InviteCode,
-    logger: &MutinyLogger,
-) -> Result<(), MutinyError> {
-    // make sure name is registered already
-    if current_address.read().await.0.is_none() {
-        log_warn!(
-            logger,
-            "can't change federation when the address is unknown"
-        );
-        return Ok(());
-    }
+// async fn change_federation_info(
+//     http_client: &reqwest::Client,
+//     base_url: &str,
+//     nostr_client: Client,
+//     current_address: Arc<RwLock<(Option<String>, bool)>>,
+//     invite_code: &InviteCode,
+//     logger: &MutinyLogger,
+// ) -> Result<(), MutinyError> {
+//     // make sure name is registered already
+//     if current_address.read().await.0.is_none() {
+//         log_warn!(
+//             logger,
+//             "can't change federation when the address is unknown"
+//         );
+//         return Ok(());
+//     }
 
-    // create nostr event
-    let signer = nostr_client.signer().await?;
-    let event_builder = EventBuilder::new(NEW_FEDERATION_EVENT_KIND, invite_code.to_string(), []);
-    let event = signer.sign_event_builder(event_builder).await?;
+//     // create nostr event
+//     let signer = nostr_client.signer().await?;
+//     let event_builder = EventBuilder::new(NEW_FEDERATION_EVENT_KIND, invite_code.to_string(), []);
+//     let event = signer.sign_event_builder(event_builder).await?;
 
-    // send request
-    let url = Url::parse(&format!("{}/v1/change-federation", base_url))
-        .map_err(|_| MutinyError::ConnectionFailed)?;
-    let request = http_client.request(Method::POST, url).json(&event);
-    let _ = utils::fetch_with_timeout(
-        http_client,
-        request.build().map_err(|_| MutinyError::ConnectionFailed)?,
-    )
-    .await
-    .map_err(|_| MutinyError::ConnectionFailed)?;
+//     // send request
+//     let url = Url::parse(&format!("{}/v1/change-federation", base_url))
+//         .map_err(|_| MutinyError::ConnectionFailed)?;
+//     let request = http_client.request(Method::POST, url).json(&event);
+//     let _ = utils::fetch_with_timeout(
+//         http_client,
+//         request.build().map_err(|_| MutinyError::ConnectionFailed)?,
+//     )
+//     .await
+//     .map_err(|_| MutinyError::ConnectionFailed)?;
 
-    log_info!(logger, "changed federation info to current federation");
+//     log_info!(logger, "changed federation info to current federation");
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 async fn disable_zaps(
     http_client: &reqwest::Client,
@@ -579,7 +579,7 @@ fn find_hermes_token(
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RegistrationInfo {
     pub name: Option<String>,
-    pub federation_id: Option<FederationId>,
+    // pub federation_id: Option<FederationId>,
     pub disabled_zaps: bool,
 }
 
@@ -673,7 +673,7 @@ struct EcashNotification {
     /// Tweak we should use to claim the ecash
     pub tweak_index: u64,
     /// Federation id that the ecash is for
-    pub federation_id: FederationId,
+    // pub federation_id: FederationId,
     /// The zap request that came along with this payment,
     /// useful for tagging the payment to a contact
     pub zap_request: Option<String>,
@@ -784,7 +784,7 @@ async fn claim_ecash_notification<S: MutinyStorage>(
 async fn handle_ecash_notification<S: MutinyStorage>(
     notification: EcashNotification,
     created_at: Timestamp,
-    federations: &RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>,
+    // federations: &RwLock<HashMap<FederationId, Arc<FederationClient<S>>>>,
     storage: &S,
     claim_key: &SecretKey,
     profile_key: Option<&Keys>,
@@ -796,24 +796,24 @@ async fn handle_ecash_notification<S: MutinyStorage>(
         notification.amount
     );
 
-    if let Some(federation) = federations.read().await.get(&notification.federation_id) {
-        claim_ecash_notification(
-            notification,
-            created_at,
-            federation.as_ref(),
-            storage,
-            claim_key,
-            profile_key,
-            logger,
-        )
-        .await?;
-    } else {
-        log_warn!(
-            logger,
-            "Received DM for unknown federation {}, discarding...",
-            notification.federation_id
-        );
-    }
+    // if let Some(federation) = federations.read().await.get(&notification.federation_id) {
+    //     claim_ecash_notification(
+    //         notification,
+    //         created_at,
+    //         federation.as_ref(),
+    //         storage,
+    //         claim_key,
+    //         profile_key,
+    //         logger,
+    //     )
+    //     .await?;
+    // } else {
+    //     log_warn!(
+    //         logger,
+    //         "Received DM for unknown federation {}, discarding...",
+    //         notification.federation_id
+    //     );
+    // }
 
     Ok(())
 }
@@ -972,7 +972,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: None,
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
@@ -1035,7 +1035,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: Some(zap_req.as_json()),
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
@@ -1100,7 +1100,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: Some(zap_req.as_json()),
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
@@ -1170,7 +1170,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: Some(zap_req.as_json()),
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
@@ -1243,7 +1243,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: Some(zap_req.as_json()),
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
@@ -1307,7 +1307,7 @@ mod test {
         let notification = EcashNotification {
             amount,
             tweak_index: 0,
-            federation_id: FederationId::dummy(),
+            // federation_id: FederationId::dummy(),
             zap_request: Some(zap_req.as_json()),
             bolt11: bolt11.clone(),
             preimage: hex::encode(preimage),
