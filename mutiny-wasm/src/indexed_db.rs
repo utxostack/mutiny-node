@@ -410,25 +410,6 @@ impl IndexedDbStorage {
                     }
                 }
             }
-            // FEDERATIONS_KEY => {
-            //     // we can get version from federation storage, so we should compare
-            //     match current.get_data::<FederationStorage>(&kv.key)? {
-            //         Some(local) => {
-            //             if local.version < kv.version {
-            //                 let obj = vss.get_object(&kv.key).await?;
-            //                 if serde_json::from_value::<FederationStorage>(obj.value.clone())
-            //                     .is_ok()
-            //                 {
-            //                     return Ok(Some((kv.key, obj.value)));
-            //                 }
-            //             }
-            //         }
-            //         None => {
-            //             let obj = vss.get_object(&kv.key).await?;
-            //             return Ok(Some((kv.key, obj.value)));
-            //         }
-            //     }
-            // }
             DEVICE_LOCK_KEY => {
                 // we can get version from device lock, so we should compare
                 match current.get_data::<DeviceLock>(&kv.key)? {
