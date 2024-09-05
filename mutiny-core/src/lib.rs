@@ -95,7 +95,6 @@ use bitcoin::secp256k1::{PublicKey, ThirtyTwoByteHash};
 use bitcoin::{bip32::ExtendedPrivKey, Transaction};
 use bitcoin::{hashes::sha256, Network, Txid};
 use bitcoin::{hashes::Hash, Address};
-use esplora_client::AsyncClient;
 use futures::{pin_mut, select, FutureExt};
 use futures_util::join;
 use futures_util::lock::Mutex;
@@ -133,7 +132,6 @@ use mockall::{automock, predicate::*};
 pub const DEVICE_LOCK_INTERVAL_SECS: u64 = 30;
 const BITCOIN_PRICE_CACHE_SEC: u64 = 300;
 const DEFAULT_PAYMENT_TIMEOUT: u64 = 30;
-const SWAP_LABEL: &str = "SWAP";
 const DUST_LIMIT: u64 = 546;
 
 #[cfg_attr(test, automock)]
@@ -553,7 +551,7 @@ pub struct FedimintSweepResult {
 }
 
 pub struct MutinyWalletConfigBuilder {
-    xprivkey: ExtendedPrivKey,
+    // xprivkey: ExtendedPrivKey,
     #[cfg(target_arch = "wasm32")]
     websocket_proxy_addr: Option<String>,
     network: Option<Network>,
@@ -601,9 +599,9 @@ impl Ord for DirectMessage {
 }
 
 impl MutinyWalletConfigBuilder {
-    pub fn new(xprivkey: ExtendedPrivKey) -> MutinyWalletConfigBuilder {
+    pub fn new(_xprivkey: ExtendedPrivKey) -> MutinyWalletConfigBuilder {
         MutinyWalletConfigBuilder {
-            xprivkey,
+            // xprivkey,
             #[cfg(target_arch = "wasm32")]
             websocket_proxy_addr: None,
             network: None,
@@ -701,7 +699,7 @@ impl MutinyWalletConfigBuilder {
         let network = self.network.expect("network is required");
 
         MutinyWalletConfig {
-            xprivkey: self.xprivkey,
+            // xprivkey: self.xprivkey,
             #[cfg(target_arch = "wasm32")]
             websocket_proxy_addr: self.websocket_proxy_addr,
             network,
@@ -726,7 +724,7 @@ impl MutinyWalletConfigBuilder {
 
 #[derive(Clone)]
 pub struct MutinyWalletConfig {
-    xprivkey: ExtendedPrivKey,
+    // xprivkey: ExtendedPrivKey,
     #[cfg(target_arch = "wasm32")]
     websocket_proxy_addr: Option<String>,
     network: Network,
@@ -1109,7 +1107,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             nostr,
             lnurl_client,
             subscription_client,
-            esplora,
+            // esplora,
             auth,
             stop,
             logger: logger.clone(),
@@ -1181,7 +1179,7 @@ pub struct MutinyWallet<S: MutinyStorage> {
     lnurl_client: Arc<LnUrlClient>,
     auth: AuthManager,
     subscription_client: Option<Arc<MutinySubscriptionClient>>,
-    esplora: Arc<AsyncClient>,
+    // esplora: Arc<AsyncClient>,
     pub stop: Arc<AtomicBool>,
     pub logger: Arc<MutinyLogger>,
     network: Network,

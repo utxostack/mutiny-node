@@ -16,7 +16,7 @@ use crate::{utils, HTLCStatus};
 use bitcoin::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::secp256k1::{Secp256k1, Signing};
-use bitcoin::{hashes::hex::FromHex, secp256k1::ThirtyTwoByteHash, Network};
+use bitcoin::{hashes::hex::FromHex, secp256k1::ThirtyTwoByteHash};
 use futures::{pin_mut, select, FutureExt};
 use futures_util::lock::Mutex;
 use lightning::util::logger::Logger;
@@ -46,14 +46,8 @@ pub(crate) mod primal;
 
 const PROFILE_ACCOUNT_INDEX: u32 = 0;
 const NWC_ACCOUNT_INDEX: u32 = 1;
-pub(crate) const SERVICE_ACCOUNT_INDEX: u32 = 2;
-
-pub(crate) const HERMES_CHAIN_INDEX: u32 = 0;
 
 const USER_NWC_PROFILE_START_INDEX: u32 = 1000;
-
-/// The number of trusted users we query for mint recommendations
-const NUM_TRUSTED_USERS: u32 = 1_000;
 
 const NWC_STORAGE_KEY: &str = "nwc_profiles";
 
@@ -1527,8 +1521,6 @@ impl<S: MutinyStorage, P: PrimalApi, C: NostrClient> NostrManager<S, P, C> {
         for word in decrypted.split_whitespace() {
             // ignore word if too short
             if word.len() > 15 {
-                // TODO skip payment through nostr
-                continue;
                 // let invoice_request_param = match bitcoin_waila::PaymentParams::from_str(word) {
                 //     // if not an invoice, go to next word in dm
                 //     Ok(param) => match param.invoice() {
@@ -1971,15 +1963,15 @@ fn get_next_nwc_index(
     Ok((name, index, child_key_index))
 }
 
-fn network_to_string(network: Network) -> &'static str {
-    match network {
-        Network::Bitcoin => "mainnet",
-        Network::Testnet => "testnet",
-        Network::Signet => "signet",
-        Network::Regtest => "regtest",
-        net => unreachable!("Unknown network {net}!"),
-    }
-}
+// fn network_to_string(network: Network) -> &'static str {
+//     match network {
+//         Network::Bitcoin => "mainnet",
+//         Network::Testnet => "testnet",
+//         Network::Signet => "signet",
+//         Network::Regtest => "regtest",
+//         net => unreachable!("Unknown network {net}!"),
+//     }
+// }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]

@@ -857,6 +857,7 @@ pub(crate) fn transaction_details_key(internal_id: Txid) -> String {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn persist_transaction_details<S: MutinyStorage>(
     storage: &S,
     transaction_details: &TransactionDetails,
@@ -892,6 +893,7 @@ pub(crate) fn persist_transaction_details<S: MutinyStorage>(
     Ok(())
 }
 
+#[allow(dead_code)]
 // Deletes the transaction detail and removes the pending index if it exists
 pub(crate) fn delete_transaction_details<S: MutinyStorage>(
     storage: &S,
