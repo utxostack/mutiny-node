@@ -857,7 +857,7 @@ pub(crate) fn transaction_details_key(internal_id: Txid) -> String {
     )
 }
 
-#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn persist_transaction_details<S: MutinyStorage>(
     storage: &S,
     transaction_details: &TransactionDetails,

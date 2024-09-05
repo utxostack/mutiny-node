@@ -1978,7 +1978,7 @@ fn get_next_nwc_index(
 mod test {
     use super::*;
     use crate::nostr::client::MockNostrClient;
-    use crate::nostr::primal::{MockPrimalApi, TrustedUser};
+    use crate::nostr::primal::MockPrimalApi;
     use crate::storage::MemoryStorage;
     use crate::utils::now;
     use crate::MockInvoiceHandler;
@@ -1990,13 +1990,10 @@ mod test {
     use lightning::ln::PaymentSecret;
     use lightning_invoice::{Bolt11Invoice, Currency, InvoiceBuilder};
     use mockall::predicate::eq;
-    use nostr::prelude::rand;
-    use nostr::prelude::rand::prelude::SliceRandom;
     use nostr::SubscriptionId;
     use std::str::FromStr;
 
     const EXPIRED_INVOICE: &str = "lnbc923720n1pj9nr6zpp5xmvlq2u5253htn52mflh2e6gn7pk5ht0d4qyhc62fadytccxw7hqhp5l4s6qwh57a7cwr7zrcz706qx0qy4eykcpr8m8dwz08hqf362egfscqzzsxqzfvsp5pr7yjvcn4ggrf6fq090zey0yvf8nqvdh2kq7fue0s0gnm69evy6s9qyyssqjyq0fwjr22eeg08xvmz88307yqu8tqqdjpycmermks822fpqyxgshj8hvnl9mkh6srclnxx0uf4ugfq43d66ak3rrz4dqcqd23vxwpsqf7dmhm";
-    const INVITE_CODE: &str = "fed11qgqzc2nhwden5te0vejkg6tdd9h8gepwvejkg6tdd9h8garhduhx6at5d9h8jmn9wshxxmmd9uqqzgxg6s3evnr6m9zdxr6hxkdkukexpcs3mn7mj3g5pc5dfh63l4tj6g9zk4er";
 
     async fn create_nostr_manager() -> NostrManager<MemoryStorage, MockPrimalApi, MockNostrClient> {
         let mnemonic = Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").expect("could not generate");
