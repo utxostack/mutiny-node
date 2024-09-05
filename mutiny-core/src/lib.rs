@@ -10,8 +10,6 @@
 extern crate core;
 
 pub mod auth;
-// pub mod blindauth;
-// mod cashu;
 mod chain;
 pub mod encrypt;
 pub mod error;
@@ -47,7 +45,6 @@ pub use crate::keymanager::generate_seed;
 pub use crate::ldkstorage::{CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY, MONITORS_PREFIX_KEY};
 use crate::utils::spawn;
 use crate::{auth::MutinyAuthClient, logging::MutinyLogger};
-// use crate::{blindauth::BlindAuthClient, cashu::CashuHttpClient};
 use crate::{error::MutinyError, nostr::ReservedProfile};
 use crate::{
     event::{HTLCStatus, MillisatAmount, PaymentInfo},
@@ -137,7 +134,6 @@ pub const DEVICE_LOCK_INTERVAL_SECS: u64 = 30;
 const BITCOIN_PRICE_CACHE_SEC: u64 = 300;
 const DEFAULT_PAYMENT_TIMEOUT: u64 = 30;
 const SWAP_LABEL: &str = "SWAP";
-const MELT_CASHU_TOKEN: &str = "Cashu Token Melt";
 const DUST_LIMIT: u64 = 546;
 
 #[cfg_attr(test, automock)]
@@ -2707,90 +2703,8 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         self.safe_mode
     }
 
-    // /// Calls upon a Cashu mint and redeems/melts the token.
-    // pub async fn melt_cashu_token(
-    //     &self,
-    //     token_v3: TokenV3,
-    // ) -> Result<Vec<MutinyInvoice>, MutinyError> {
-    //     log_trace!(self.logger, "calling melt_cashu_token");
-
-    //     let mut invoices: Vec<MutinyInvoice> = Vec::with_capacity(token_v3.tokens.len());
-
-    //     for token in token_v3.tokens {
-    //         let mint_url = match token.mint {
-    //             Some(url) => url,
-    //             None => return Err(MutinyError::EmptyMintURLError),
-    //         };
-
-    //         let total_proofs_amount = token.proofs.total_amount();
-    //         let mut invoice_pct = 0.99;
-    //         // create invoice for 1% less than proofs amount
-    //         let mut invoice_amount = total_proofs_amount as f64 * invoice_pct;
-    //         let mut mutiny_invoice: MutinyInvoice;
-    //         let mut mutiny_invoice_str: Bolt11Invoice;
-    //         let mut melt_quote_res: PostMeltQuoteBolt11Response;
-
-    //         loop {
-    //             mutiny_invoice = self
-    //                 .create_invoice(invoice_amount as u64, vec![MELT_CASHU_TOKEN.to_string()])
-    //                 .await?;
-
-    //             mutiny_invoice_str = mutiny_invoice
-    //                 .bolt11
-    //                 .clone()
-    //                 .expect("The invoice should have BOLT11");
-
-    //             let quote_request = PostMeltQuoteBolt11Request {
-    //                 request: mutiny_invoice_str.to_string(),
-    //                 unit: CurrencyUnit::Sat,
-    //             };
-
-    //             melt_quote_res = self
-    //                 .cashu_client
-    //                 .post_melt_quote_bolt11(&mint_url, quote_request)
-    //                 .await?;
-
-    //             if melt_quote_res.amount + melt_quote_res.fee_reserve > total_proofs_amount {
-    //                 // if invoice created was too big, lower amount
-    //                 invoice_pct -= 0.01;
-    //                 invoice_amount *= invoice_pct;
-    //             } else {
-    //                 break;
-    //             }
-    //         }
-
-    //         let melt_request = PostMeltBolt11Request {
-    //             quote: melt_quote_res.quote,
-    //             inputs: token.proofs,
-    //             outputs: vec![],
-    //         };
-
-    //         let post_melt_bolt11_response: PostMeltBolt11Response = self
-    //             .cashu_client
-    //             .post_melt_bolt11(&mint_url, melt_request)
-    //             .await?;
-
-    //         if post_melt_bolt11_response.paid {
-    //             mutiny_invoice = self.get_invoice(&mutiny_invoice_str).await?;
-    //             invoices.push(mutiny_invoice);
-    //         }
-    //     }
-    //     log_trace!(self.logger, "finished calling melt_cashu_token");
-
-    //     Ok(invoices)
-    // }
-
+    // FIXME
     pub async fn check_available_lnurl_name(&self, _name: String) -> Result<bool, MutinyError> {
-        // log_trace!(self.logger, "calling check_available_lnurl_name");
-
-        // let res = if let Some(hermes_client) = self.hermes_client.clone() {
-        //     Ok(hermes_client.check_available_name(name).await?)
-        // } else {
-        //     Err(MutinyError::NotFound)
-        // };
-        // log_trace!(self.logger, "calling check_available_lnurl_name");
-
-        // res
         Err(MutinyError::NotFound)
     }
 

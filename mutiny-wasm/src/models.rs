@@ -432,7 +432,6 @@ pub struct MutinyBalance {
     pub confirmed: u64,
     pub unconfirmed: u64,
     pub lightning: u64,
-    pub federation: u64,
     pub force_close: u64,
 }
 
@@ -450,7 +449,6 @@ impl From<mutiny_core::MutinyBalance> for MutinyBalance {
             confirmed: m.confirmed,
             unconfirmed: m.unconfirmed,
             lightning: m.lightning,
-            federation: 0,
             force_close: m.force_close,
         }
     }

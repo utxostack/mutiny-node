@@ -6,7 +6,6 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace};
 use log::error;
-// use mutiny_core::blindauth::TokenStorage;
 use mutiny_core::logging::MutinyLogger;
 use mutiny_core::logging::LOGGING_KEY;
 use mutiny_core::nodemanager::NodeStorage;
@@ -429,21 +428,8 @@ impl IndexedDbStorage {
                 }
             }
             SERVICE_TOKENS => {
-                // we can get version from TokenStorage, so we should compare
-                // match current.get_data::<TokenStorage>(&kv.key)? {
-                //     Some(token_storage) => {
-                //         if token_storage.version < kv.version {
-                //             let obj = vss.get_object(&kv.key).await?;
-                //             if serde_json::from_value::<TokenStorage>(obj.value.clone()).is_ok() {
-                //                 return Ok(Some((kv.key, obj.value)));
-                //             }
-                //         }
-                //     }
-                //     None => {
                 let obj = vss.get_object(&kv.key).await?;
                 return Ok(Some((kv.key, obj.value)));
-                //     }
-                // }
             }
             key => {
                 if key.starts_with(MONITORS_PREFIX_KEY) {
@@ -501,36 +487,6 @@ impl IndexedDbStorage {
                         }
                     }
                 }
-                // else if key.starts_with(FEDIMINTS_PREFIX_KEY) {
-                //     // we can get versions from each fedimint, so we should compare
-                //     match current.get_data::<VersionedValue>(&kv.key)? {
-                //         Some(local) => {
-                //             if local.version < kv.version {
-                //                 let obj = vss.get_object(&kv.key).await?;
-                //                 if serde_json::from_value::<VersionedValue>(obj.value.clone())
-                //                     .is_ok()
-                //                 {
-                //                     return Ok(Some((kv.key, obj.value)));
-                //                 }
-                //             } else {
-                //                 log_debug!(
-                //                     logger,
-                //                     "Skipping vss key {} with version {}, current version is {}",
-                //                     kv.key,
-                //                     kv.version,
-                //                     local.version
-                //                 );
-                //                 return Ok(None);
-                //             }
-                //         }
-                //         None => {
-                //             let obj = vss.get_object(&kv.key).await?;
-                //             if serde_json::from_value::<VersionedValue>(obj.value.clone()).is_ok() {
-                //                 return Ok(Some((kv.key, obj.value)));
-                //             }
-                //         }
-                //     }
-                // }
             }
         }
 

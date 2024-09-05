@@ -29,7 +29,6 @@ use lightning::{log_info, log_warn, routing::gossip::NodeId, util::logger::Logge
 use lightning_invoice::Bolt11Invoice;
 use lnurl::lightning_address::LightningAddress;
 use lnurl::lnurl::LnUrl;
-// use moksha_core::token::TokenV3;
 use mutiny_core::auth::MutinyAuthClient;
 use mutiny_core::lnurlauth::AuthManager;
 use mutiny_core::nostr::nip49::NIP49URI;
@@ -604,19 +603,6 @@ impl MutinyWallet {
         Ok(self.inner.estimate_tx_fee(addr, amount, fee_rate).await?)
     }
 
-    // /// Estimates the onchain fee for a transaction sweep our on-chain balance
-    // /// to the given address.
-    // ///
-    // /// The fee rate is in sat/vbyte.
-    // pub async fn estimate_sweep_tx_fee(
-    //     &self,
-    //     destination_address: String,
-    //     fee_rate: Option<f32>,
-    // ) -> Result<u64, MutinyJsError> {
-    //     let addr = Address::from_str(&destination_address)?.assume_checked();
-    //     Ok(self.inner.estimate_sweep_tx_fee(addr, fee_rate).await?)
-    // }
-
     /// Estimates the onchain fee for a opening a lightning channel.
     /// The amount is in satoshis and the fee rate is in sat/vbyte.
     pub fn estimate_channel_open_fee(
@@ -935,18 +921,6 @@ impl MutinyWallet {
         let lnurl = LnUrl::from_str(&lnurl)?;
         Ok(self.inner.lnurl_withdraw(&lnurl, amount_sats).await?)
     }
-
-    // /// Calls upon a Cash mint and melts the token from it.
-    // #[wasm_bindgen]
-    // pub async fn melt_cashu_token(
-    //     &self,
-    //     maybe_token: String,
-    // ) -> Result<JsValue /* Vec<MutinyInvoice> */, MutinyJsError> {
-    //     let token = TokenV3::deserialize(maybe_token)?;
-    //     let result = self.inner.melt_cashu_token(token).await?;
-    //     let invoices: Vec<MutinyInvoice> = result.into_iter().map(|i| i.into()).collect();
-    //     Ok(JsValue::from_serde(&invoices)?)
-    // }
 
     /// Authenticates with a LNURL-auth for the given profile.
     #[wasm_bindgen]
