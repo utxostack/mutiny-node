@@ -851,7 +851,7 @@ impl MutinyStorage for () {
 
 pub(crate) fn transaction_details_key(internal_id: Txid) -> String {
     format!(
-        "{}{:#}",
+        "{}{:x}",
         TRANSACTION_DETAILS_PREFIX_KEY,
         internal_id.to_raw_hash(),
     )
