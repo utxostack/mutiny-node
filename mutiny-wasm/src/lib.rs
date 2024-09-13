@@ -751,6 +751,7 @@ impl MutinyWallet {
     /// Returns the current LSP config
     pub async fn get_configured_lsp(&self) -> Result<JsValue, MutinyJsError> {
         match self.inner.node_manager.get_configured_lsp().await? {
+            Some(LspConfig::PsbtLsp(config)) => Ok(JsValue::from_serde(&config)?),
             Some(LspConfig::VoltageFlow(config)) => Ok(JsValue::from_serde(&config)?),
             Some(LspConfig::Lsps(config)) => Ok(JsValue::from_serde(&config)?),
             None => Ok(JsValue::NULL),
@@ -2008,6 +2009,13 @@ impl MutinyWallet {
     pub async fn is_potential_hodl_invoice(invoice: String) -> Result<bool, MutinyJsError> {
         let invoice = Bolt11Invoice::from_str(&invoice)?;
         Ok(mutiny_core::utils::is_hodl_invoice(&invoice))
+    }
+
+    /// Fund channel with PSBT
+    #[wasm_bindgen]
+    pub async fn fund_psbt(&self, amount_sat: u64) -> Result<(), MutinyJsError> {
+        self.inner.node_manager.fund_psbt(amount_sat).await?;
+        Ok(())
     }
 }
 

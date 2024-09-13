@@ -39,7 +39,7 @@ use core::time::Duration;
 use esplora_client::AsyncClient;
 use futures_util::lock::Mutex;
 use hex_conservative::DisplayHex;
-use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet};
+use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet, WalletSource};
 use lightning::ln::channelmanager::ChannelDetails;
 use lightning::ln::PaymentSecret;
 use lightning::onion_message::messenger::OnionMessenger as LdkOnionMessenger;
@@ -505,6 +505,11 @@ impl<S: MutinyStorage> NodeBuilder<S> {
 
         log_trace!(logger, "creating lsp client");
         let (lsp_client, lsp_client_pubkey, liquidity) = match lsp_config {
+            Some(LspConfig::PsbtLsp(config)) => {
+                let lsp = AnyLsp::new_psbt_lsp(config, logger.clone())?;
+                let pubkey = lsp.get_lsp_pubkey().await;
+                (Some(lsp), Some(pubkey), None)
+            }
             Some(LspConfig::VoltageFlow(config)) => {
                 let lsp = AnyLsp::new_voltage_flow(config, logger.clone()).await?;
                 let pubkey = lsp.get_lsp_pubkey().await;
@@ -1244,6 +1249,9 @@ impl<S: MutinyStorage> Node<S> {
                 }
 
                 match lsp {
+                    AnyLsp::PsbtLsp(_) => {
+                        todo!()
+                    }
                     AnyLsp::VoltageFlow(lock) => {
                         // check the fee from the LSP
                         let lsp_fee = lsp
@@ -2252,6 +2260,9 @@ async fn start_reconnection_handling<S: MutinyStorage>(
                 Err(e) => {
                     log_trace!(proxy_logger, "could not connect to lsp {node_id}: {e}");
                     match lsp {
+                        AnyLsp::PsbtLsp(_) => {
+                            // TODO
+                        }
                         AnyLsp::VoltageFlow(lock) => {
                             let mut client = lock.write().await;
                             if let Err(e) = client.set_connection_info().await {

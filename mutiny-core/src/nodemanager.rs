@@ -1,6 +1,7 @@
 use crate::labels::LabelStorage;
 use crate::ldkstorage::CHANNEL_CLOSURE_PREFIX;
 use crate::logging::LOGGING_KEY;
+use crate::lsp::psbt_lsp::{self, PsbtLspClient};
 use crate::lsp::voltage;
 use crate::utils::{sleep, spawn};
 use crate::MutinyInvoice;
@@ -39,6 +40,7 @@ use esplora_client::{AsyncClient, Builder};
 use futures::future::join_all;
 use hex_conservative::DisplayHex;
 use lightning::chain::Confirm;
+use lightning::events::bump_transaction::WalletSource;
 use lightning::events::ClosureReason;
 use lightning::ln::channelmanager::{ChannelDetails, PhantomRouteHints};
 use lightning::ln::script::ShutdownScript;
@@ -1379,6 +1381,14 @@ impl<S: MutinyStorage> NodeManager<S> {
 
         // verify that the LSP config is valid
         match lsp_config.as_mut() {
+            Some(LspConfig::PsbtLsp(config)) => {
+                let http_client = Client::new();
+
+                // try to connect to the LSP, update the config if successful
+                let pk = psbt_lsp::fetch_connection_info(&http_client, &config.url, &self.logger)
+                    .await?;
+                config.pubkey = Some(pk);
+            }
             Some(LspConfig::VoltageFlow(config)) => {
                 let http_client = Client::new();
 
@@ -1990,6 +2000,18 @@ impl<S: MutinyStorage> NodeManager<S> {
 
         Ok(Value::Object(serde_map))
     }
+
+    pub async fn fund_psbt(&self, amount_sat: u64) -> Result<(), MutinyError> {
+        let Some(LspConfig::PsbtLsp(config)) = self.lsp_config.as_ref() else {
+            return Err(MutinyError::LspConnectionError);
+        };
+        let client = PsbtLspClient::new(config.url.clone());
+        let psbt = self.wallet.fund_psbt(amount_sat)?;
+        let full_psbt = client.fetch_fund_psbt(&psbt).await?;
+        let signed = self.wallet.sign_psbt_only(full_psbt)?;
+        client.fund_psbt_channel(&signed).await?;
+        Ok(())
+    }
 }
 
 // This will create a new node with a node manager and return the PublicKey of the node created.
@@ -2080,7 +2102,7 @@ pub fn create_lsp_config(
                     return Err(MutinyError::InvalidArgumentsError);
                 }
 
-                Ok(Some(LspConfig::new_voltage_flow(trimmed)))
+                Ok(Some(LspConfig::new_psbt_lsp(trimmed)))
             } else {
                 Ok(None)
             }

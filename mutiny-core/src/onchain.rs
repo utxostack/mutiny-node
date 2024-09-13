@@ -605,6 +605,66 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         Ok(payjoin)
     }
 
+    /// Construct psbt for funding channel
+    pub fn fund_psbt(&self, amount: u64) -> Result<PartiallySignedTransaction, MutinyError> {
+        let mut wallet = self.wallet.try_write()?;
+        let mut psbt = {
+            let mut builder = wallet.build_tx();
+            builder.add_recipient(ScriptBuf::new_op_return(&[0x42u8]), amount);
+            builder.fee_absolute(0);
+            match builder.finish() {
+                Ok(r) => r,
+                Err(err) => {
+                    log_error!(self.logger, "{err:?}");
+                    return Err(err.into());
+                }
+            }
+        };
+
+        // remove placeholder output
+        let placeholder_i = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .enumerate()
+            .find_map(|(i, out)| {
+                if out.script_pubkey.is_op_return() {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        psbt.outputs.remove(placeholder_i);
+        psbt.unsigned_tx.output.remove(placeholder_i);
+        Ok(psbt)
+    }
+
+    pub fn sign_psbt_only(
+        &self,
+        mut psbt: PartiallySignedTransaction,
+    ) -> Result<PartiallySignedTransaction, MutinyError> {
+        let wallet = self.wallet.try_read().map_err(|e| {
+            log_error!(
+                self.logger,
+                "Could not get wallet lock to sign transaction: {e:?}"
+            );
+            e
+        })?;
+
+        // need to trust witness_utxo for signing since that's LDK sets in the psbt
+        let sign_options = SignOptions {
+            trust_witness_utxo: true,
+            ..Default::default()
+        };
+        wallet.sign(&mut psbt, sign_options).map_err(|e| {
+            log_error!(self.logger, "Could not sign transaction: {e:?}");
+            e
+        })?;
+
+        Ok(psbt)
+    }
+
     pub fn create_sweep_psbt(
         &self,
         spk: ScriptBuf,
@@ -907,5 +967,13 @@ mod tests {
             .addresses
             .contains(&send_to_addr.to_string()));
         assert!(label.unwrap().addresses.contains(&change_addr.to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_fund_psbt() {
+        let test_name = "fund_psbt";
+        log!("{}", test_name);
+        let wallet = create_wallet().await;
+        let psbt = wallet.fund_psbt(100).unwrap();
     }
 }

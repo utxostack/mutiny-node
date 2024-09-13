@@ -12,17 +12,20 @@ use bitcoin::Network;
 use lightning::ln::PaymentHash;
 use lightning_invoice::Bolt11Invoice;
 use lsps::{LspsClient, LspsConfig};
+use psbt_lsp::{PsbtLspClient, PsbtLspConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{atomic::AtomicBool, Arc};
 use voltage::LspClient;
 
 pub mod lsps;
+pub mod psbt_lsp;
 pub mod voltage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum LspConfig {
     VoltageFlow(VoltageConfig),
+    PsbtLsp(PsbtLspConfig),
     Lsps(LspsConfig),
 }
 
@@ -35,6 +38,10 @@ impl LspConfig {
         })
     }
 
+    pub fn new_psbt_lsp(url: String) -> Self {
+        Self::PsbtLsp(PsbtLspConfig { url, pubkey: None })
+    }
+
     pub fn new_lsps(connection_string: String, token: Option<String>) -> Self {
         Self::Lsps(LspsConfig {
             connection_string,
@@ -45,6 +52,7 @@ impl LspConfig {
     pub fn accept_underpaying_htlcs(&self) -> bool {
         match self {
             LspConfig::VoltageFlow(_) => false,
+            LspConfig::PsbtLsp(_) => false,
             LspConfig::Lsps(_) => true,
         }
     }
@@ -53,6 +61,7 @@ impl LspConfig {
     /// contain the same data.
     pub fn matches(&self, other: &Self) -> bool {
         match (self, other) {
+            (LspConfig::PsbtLsp(conf), LspConfig::PsbtLsp(other)) => conf.url == other.url,
             (LspConfig::VoltageFlow(conf), LspConfig::VoltageFlow(other)) => conf.url == other.url,
             (LspConfig::Lsps(conf), LspConfig::Lsps(other)) => conf == other,
             _ => false,
@@ -66,10 +75,9 @@ where
 {
     let v: Option<Value> = Option::deserialize(deserializer)?;
     match v {
-        Some(Value::String(s)) => Ok(Some(LspConfig::VoltageFlow(VoltageConfig {
+        Some(Value::String(s)) => Ok(Some(LspConfig::PsbtLsp(PsbtLspConfig {
             url: s,
             pubkey: None,
-            connection_string: None,
         }))),
         Some(Value::Object(_)) => LspConfig::deserialize(v.unwrap())
             .map(Some)
@@ -119,11 +127,21 @@ pub(crate) trait Lsp {
 
 #[derive(Clone)]
 pub enum AnyLsp<S: MutinyStorage> {
+    PsbtLsp(Arc<RwLock<PsbtLspClient>>),
     VoltageFlow(Arc<RwLock<LspClient>>),
     Lsps(LspsClient<S>),
 }
 
 impl<S: MutinyStorage> AnyLsp<S> {
+    pub fn new_psbt_lsp(
+        config: PsbtLspConfig,
+        logger: Arc<MutinyLogger>,
+    ) -> Result<Self, MutinyError> {
+        Ok(Self::PsbtLsp(Arc::new(RwLock::new(PsbtLspClient::new(
+            config.url,
+        )))))
+    }
+
     pub async fn new_voltage_flow(
         config: VoltageConfig,
         logger: Arc<MutinyLogger>,
@@ -159,6 +177,7 @@ impl<S: MutinyStorage> AnyLsp<S> {
 
     pub fn accept_underpaying_htlcs(&self) -> bool {
         match self {
+            AnyLsp::PsbtLsp(_) => false,
             AnyLsp::VoltageFlow(_) => false,
             AnyLsp::Lsps(_) => true,
         }
@@ -174,6 +193,9 @@ impl<S: MutinyStorage> AnyLsp<S> {
 impl<S: MutinyStorage> Lsp for AnyLsp<S> {
     async fn get_lsp_fee_msat(&self, fee_request: FeeRequest) -> Result<FeeResponse, MutinyError> {
         match self {
+            AnyLsp::PsbtLsp(_) => {
+                todo!()
+            }
             AnyLsp::VoltageFlow(lock) => {
                 let client = lock.read().await;
                 client.get_lsp_fee_msat(fee_request).await
@@ -187,6 +209,9 @@ impl<S: MutinyStorage> Lsp for AnyLsp<S> {
         invoice_request: InvoiceRequest,
     ) -> Result<Bolt11Invoice, MutinyError> {
         match self {
+            AnyLsp::PsbtLsp(_) => {
+                todo!()
+            }
             AnyLsp::VoltageFlow(lock) => {
                 let client = lock.read().await;
                 client.get_lsp_invoice(invoice_request).await
@@ -197,6 +222,10 @@ impl<S: MutinyStorage> Lsp for AnyLsp<S> {
 
     async fn get_lsp_pubkey(&self) -> PublicKey {
         match self {
+            AnyLsp::PsbtLsp(lock) => {
+                todo!()
+            }
+
             AnyLsp::VoltageFlow(lock) => {
                 let client = lock.read().await;
                 client.get_lsp_pubkey().await
@@ -207,6 +236,9 @@ impl<S: MutinyStorage> Lsp for AnyLsp<S> {
 
     async fn get_lsp_connection_string(&self) -> String {
         match self {
+            AnyLsp::PsbtLsp(_) => {
+                todo!()
+            }
             AnyLsp::VoltageFlow(lock) => {
                 let client = lock.read().await;
                 client.get_lsp_connection_string().await
@@ -217,6 +249,9 @@ impl<S: MutinyStorage> Lsp for AnyLsp<S> {
 
     async fn get_config(&self) -> LspConfig {
         match self {
+            AnyLsp::PsbtLsp(_) => {
+                todo!()
+            }
             AnyLsp::VoltageFlow(lock) => {
                 let client = lock.read().await;
                 client.get_config().await
@@ -227,6 +262,9 @@ impl<S: MutinyStorage> Lsp for AnyLsp<S> {
 
     fn get_expected_skimmed_fee_msat(&self, payment_hash: PaymentHash, payment_size: u64) -> u64 {
         match self {
+            AnyLsp::PsbtLsp(_) => {
+                todo!()
+            }
             AnyLsp::VoltageFlow(_) => 0,
             AnyLsp::Lsps(client) => {
                 client.get_expected_skimmed_fee_msat(payment_hash, payment_size)
