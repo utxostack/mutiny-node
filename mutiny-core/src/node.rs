@@ -1210,6 +1210,7 @@ impl<S: MutinyStorage> Node<S> {
         amount_sat: u64,
         route_hints: Option<Vec<PhantomRouteHints>>,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<(Bolt11Invoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
@@ -1274,6 +1275,7 @@ impl<S: MutinyStorage> Node<S> {
                                 Some(lsp_fee.fee_amount_msat),
                                 route_hints,
                                 labels,
+                                expiry_delta_secs,
                             )
                             .await?;
 
@@ -1303,6 +1305,7 @@ impl<S: MutinyStorage> Node<S> {
                                     None,
                                     route_hints,
                                     labels,
+                                    expiry_delta_secs,
                                 )
                                 .await?,
                                 0,
@@ -1345,8 +1348,14 @@ impl<S: MutinyStorage> Node<S> {
                 }
             }
             None => Ok((
-                self.create_internal_invoice(Some(amount_sat), None, route_hints, labels)
-                    .await?,
+                self.create_internal_invoice(
+                    Some(amount_sat),
+                    None,
+                    route_hints,
+                    labels,
+                    expiry_delta_secs,
+                )
+                .await?,
                 0,
             )),
         };
@@ -1361,10 +1370,11 @@ impl<S: MutinyStorage> Node<S> {
         fee_amount_msat: Option<u64>,
         route_hints: Option<Vec<PhantomRouteHints>>,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<Bolt11Invoice, MutinyError> {
         let amount_msat = amount_sat.map(|s| s * 1_000);
-        // Set description to empty string to make smallest possible invoice/QR code
-        let description = "".to_string();
+        // Use first element of labels as description
+        let description = labels.get(0).unwrap_or(&"".to_string()).to_owned();
 
         // wait for first sync to complete
         for _ in 0..60 {
@@ -1391,7 +1401,7 @@ impl<S: MutinyStorage> Node<S> {
                     amount_msat,
                     description,
                     now,
-                    3600,
+                    expiry_delta_secs.unwrap_or(3600),
                     Some(40),
                 )
             }
@@ -1399,7 +1409,7 @@ impl<S: MutinyStorage> Node<S> {
                 amount_msat,
                 None,
                 description,
-                3600,
+                expiry_delta_secs.unwrap_or(3600),
                 r,
                 self.keys_manager.clone(),
                 self.keys_manager.clone(),
@@ -2887,7 +2897,7 @@ mod wasm_test {
         let labels = vec![label.clone()];
 
         let (invoice, _) = node
-            .create_invoice(amount_sats, None, labels.clone())
+            .create_invoice(amount_sats, None, labels.clone(), None)
             .await
             .unwrap();
 
@@ -2933,7 +2943,11 @@ mod wasm_test {
         let storage = MemoryStorage::default();
         let node = create_node(storage).await;
 
-        let invoice = node.create_invoice(10_000, None, vec![]).await.unwrap().0;
+        let invoice = node
+            .create_invoice(10_000, None, vec![], None)
+            .await
+            .unwrap()
+            .0;
 
         let result = node
             .pay_invoice_with_timeout(&invoice, None, None, vec![])

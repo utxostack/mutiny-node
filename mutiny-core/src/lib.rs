@@ -127,6 +127,7 @@ pub trait InvoiceHandler {
         &self,
         amount: u64,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError>;
 }
 
@@ -1181,7 +1182,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             None
         } else {
             Some(
-                self.create_lightning_invoice(amount.expect("just checked"), labels.clone())
+                self.create_lightning_invoice(amount.expect("just checked"), labels.clone(), None)
                     .await?
                     .bolt11
                     .ok_or(MutinyError::InvoiceCreationFailed)?,
@@ -1304,10 +1305,14 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         &self,
         amount: u64,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError> {
         log_trace!(self.logger, "calling create_lightning_invoice");
 
-        let (inv, _fee) = self.node_manager.create_invoice(amount, labels).await?;
+        let (inv, _fee) = self
+            .node_manager
+            .create_invoice(amount, labels, expiry_delta_secs)
+            .await?;
 
         log_trace!(self.logger, "finished calling create_lightning_invoice");
         Ok(inv)
@@ -1826,7 +1831,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
                 // fixme: do we need to use this description?
                 let _description = withdraw.default_description.clone();
                 let mutiny_invoice = self
-                    .create_invoice(amount_sats, vec!["LNURL Withdrawal".to_string()])
+                    .create_invoice(amount_sats, vec!["LNURL Withdrawal".to_string()], None)
                     .await?;
                 let invoice_str = mutiny_invoice.bolt11.expect("Invoice should have bolt11");
                 let res = self
@@ -2057,8 +2062,10 @@ impl<S: MutinyStorage> InvoiceHandler for MutinyWallet<S> {
         &self,
         amount: u64,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError> {
-        self.create_lightning_invoice(amount, labels).await
+        self.create_lightning_invoice(amount, labels, expiry_delta_secs)
+            .await
     }
 }
 

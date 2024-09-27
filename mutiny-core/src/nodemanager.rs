@@ -1414,6 +1414,7 @@ impl<S: MutinyStorage> NodeManager<S> {
         &self,
         amount: u64,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<(MutinyInvoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
@@ -1440,7 +1441,7 @@ impl<S: MutinyStorage> NodeManager<S> {
             return Err(MutinyError::WalletOperationFailed);
         };
         let invoice = first_node
-            .create_invoice(amount, route_hints, labels)
+            .create_invoice(amount, route_hints, labels, expiry_delta_secs)
             .await?;
         log_trace!(self.logger, "finished calling create_invoice");
 

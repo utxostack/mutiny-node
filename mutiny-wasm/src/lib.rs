@@ -725,9 +725,14 @@ impl MutinyWallet {
     pub async fn create_invoice(
         &self,
         amount: u64,
-        labels: Vec<String>,
+        label: String,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyJsError> {
-        Ok(self.inner.create_invoice(amount, labels).await?.into())
+        Ok(self
+            .inner
+            .create_invoice(amount, vec![label], expiry_delta_secs)
+            .await?
+            .into())
     }
 
     /// Pays a lightning invoice from the selected node.
