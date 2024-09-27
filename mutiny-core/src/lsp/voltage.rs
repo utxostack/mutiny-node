@@ -205,60 +205,61 @@ impl LspClient {
         Ok(())
     }
 
-    /// Verify that the invoice has all the parameters we expect
-    /// Returns an Option with an error message if the invoice is invalid
-    pub(crate) fn verify_invoice(
-        &self,
-        our_invoice: &Bolt11Invoice,
-        lsp_invoice: &Bolt11Invoice,
-        lsp_fee_msats: u64,
-    ) -> Option<String> {
-        if lsp_invoice.network() != our_invoice.network() {
-            return Some(format!(
-                "Received invoice on wrong network: {} != {}",
-                lsp_invoice.network(),
-                our_invoice.network()
-            ));
-        }
+    // TODO: Skip LSP invoice verifying
+    // Verify that the invoice has all the parameters we expect
+    // Returns an Option with an error message if the invoice is invalid
+    // pub(crate) fn verify_invoice(
+    //     &self,
+    //     our_invoice: &Bolt11Invoice,
+    //     lsp_invoice: &Bolt11Invoice,
+    //     lsp_fee_msats: u64,
+    // ) -> Option<String> {
+    //     if lsp_invoice.network() != our_invoice.network() {
+    //         return Some(format!(
+    //             "Received invoice on wrong network: {} != {}",
+    //             lsp_invoice.network(),
+    //             our_invoice.network()
+    //         ));
+    //     }
 
-        if lsp_invoice.payment_hash() != our_invoice.payment_hash() {
-            return Some(format!(
-                "Received invoice with wrong payment hash: {} != {}",
-                lsp_invoice.payment_hash(),
-                our_invoice.payment_hash()
-            ));
-        }
+    //     if lsp_invoice.payment_hash() != our_invoice.payment_hash() {
+    //         return Some(format!(
+    //             "Received invoice with wrong payment hash: {} != {}",
+    //             lsp_invoice.payment_hash(),
+    //             our_invoice.payment_hash()
+    //         ));
+    //     }
 
-        let invoice_pubkey = lsp_invoice.recover_payee_pub_key();
-        if invoice_pubkey != self.pubkey {
-            return Some(format!(
-                "Received invoice from wrong node: {invoice_pubkey} != {}",
-                self.pubkey
-            ));
-        }
+    //     let invoice_pubkey = lsp_invoice.recover_payee_pub_key();
+    //     if invoice_pubkey != self.pubkey {
+    //         return Some(format!(
+    //             "Received invoice from wrong node: {invoice_pubkey} != {}",
+    //             self.pubkey
+    //         ));
+    //     }
 
-        if lsp_invoice.amount_milli_satoshis().is_none() {
-            return Some("Invoice amount is missing".to_string());
-        }
+    //     if lsp_invoice.amount_milli_satoshis().is_none() {
+    //         return Some("Invoice amount is missing".to_string());
+    //     }
 
-        if our_invoice.amount_milli_satoshis().is_none() {
-            return Some("Invoice amount is missing".to_string());
-        }
+    //     if our_invoice.amount_milli_satoshis().is_none() {
+    //         return Some("Invoice amount is missing".to_string());
+    //     }
 
-        let lsp_invoice_amt = lsp_invoice.amount_milli_satoshis().expect("just checked");
-        let our_invoice_amt = our_invoice.amount_milli_satoshis().expect("just checked");
+    //     let lsp_invoice_amt = lsp_invoice.amount_milli_satoshis().expect("just checked");
+    //     let our_invoice_amt = our_invoice.amount_milli_satoshis().expect("just checked");
 
-        let expected_lsp_invoice_amt = our_invoice_amt + lsp_fee_msats;
+    //     let expected_lsp_invoice_amt = our_invoice_amt + lsp_fee_msats;
 
-        // verify invoice within 10 sats of our target
-        if lsp_invoice_amt.abs_diff(expected_lsp_invoice_amt) > 10_000 {
-            return Some(format!(
-                "Received invoice with wrong amount: {lsp_invoice_amt} when amount was {expected_lsp_invoice_amt}",
-            ));
-        }
+    //     // verify invoice within 10 sats of our target
+    //     if lsp_invoice_amt.abs_diff(expected_lsp_invoice_amt) > 10_000 {
+    //         return Some(format!(
+    //             "Received invoice with wrong amount: {lsp_invoice_amt} when amount was {expected_lsp_invoice_amt}",
+    //         ));
+    //     }
 
-        None
-    }
+    //     None
+    // }
 }
 
 /// Adds the x-auth-token header if needed
