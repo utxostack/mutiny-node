@@ -102,7 +102,7 @@ use hex_conservative::{DisplayHex, FromHex};
 use itertools::Itertools;
 pub use lightning;
 use lightning::chain::BestBlock;
-use lightning::ln::PaymentHash;
+use lightning::ln::{ChannelId, PaymentHash};
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace, log_warn};
 pub use lightning_invoice;
@@ -1454,6 +1454,43 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             Err(MutinyError::InsufficientBalance)
         };
         log_trace!(self.logger, "finished calling pay_invoice");
+
+        res
+    }
+
+    /// Rebalance
+    pub async fn rebalance(
+        &self,
+        amt_sats: u64,
+        src_chan_id: &ChannelId,
+        dst_chan_id: &ChannelId,
+        labels: Vec<String>,
+    ) -> Result<MutinyInvoice, MutinyError> {
+        log_trace!(self.logger, "calling rebalance");
+
+        // If any balance at all, then fallback to node manager for payment.
+        // Take the error from the node manager as the priority.
+        let res = if self
+            .node_manager
+            .nodes
+            .read()
+            .await
+            .iter()
+            .flat_map(|(_, n)| n.channel_manager.list_channels())
+            .map(|c| c.balance_msat)
+            .sum::<u64>()
+            > 0
+        {
+            let res = self
+                .node_manager
+                .rebalance(None, amt_sats, src_chan_id, dst_chan_id, labels)
+                .await?;
+
+            Ok(res)
+        } else {
+            Err(MutinyError::InsufficientBalance)
+        };
+        log_trace!(self.logger, "finished calling rebalance");
 
         res
     }

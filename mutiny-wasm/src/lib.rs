@@ -25,11 +25,13 @@ use bitcoin::{Address, Network, OutPoint, Txid};
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
 use hex_conservative::DisplayHex;
+use lightning::ln::ChannelId;
 use lightning::{log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 use lnurl::lightning_address::LightningAddress;
 use lnurl::lnurl::LnUrl;
 use mutiny_core::auth::MutinyAuthClient;
+use mutiny_core::error::MutinyError;
 use mutiny_core::lnurlauth::AuthManager;
 use mutiny_core::nostr::nip49::NIP49URI;
 use mutiny_core::nostr::nwc::{BudgetedSpendingConditions, NwcProfileTag, SpendingConditions};
@@ -47,6 +49,7 @@ use mutiny_core::{
 };
 use mutiny_core::{logging::MutinyLogger, lsp::LspConfig, nostr::ProfileType};
 use nostr::prelude::Method;
+use nostr::util::hex;
 use nostr::{Keys, ToBech32};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -825,6 +828,24 @@ impl MutinyWallet {
         Ok(self
             .inner
             .pay_invoice(&invoice, amt_sats, labels)
+            .await?
+            .into())
+    }
+
+    /// Rebalance
+    #[wasm_bindgen]
+    pub async fn rebalance(
+        &self,
+        amt_sats: u64,
+        src_chan_id: String,
+        dst_chan_id: String,
+        labels: Vec<String>,
+    ) -> Result<MutinyInvoice, MutinyJsError> {
+        let src_chan_id = parse_chan_id(src_chan_id)?;
+        let dst_chan_id = parse_chan_id(dst_chan_id)?;
+        Ok(self
+            .inner
+            .rebalance(amt_sats, &src_chan_id, &dst_chan_id, labels)
             .await?
             .into())
     }
@@ -2024,6 +2045,17 @@ impl MutinyWallet {
         let invoice = Bolt11Invoice::from_str(&invoice)?;
         Ok(mutiny_core::utils::is_hodl_invoice(&invoice))
     }
+}
+
+fn parse_chan_id(s: String) -> Result<ChannelId, MutinyError> {
+    let Some((tx, index)) = s.split_once(":") else {
+        return Err(MutinyError::InvalidArgumentsError);
+    };
+    let txid = FromHex::from_hex(tx).map_err(|_| MutinyError::InvalidArgumentsError)?;
+    let output_index: u16 = index
+        .parse()
+        .map_err(|_| MutinyError::InvalidArgumentsError)?;
+    Ok(ChannelId::v1_from_funding_txid(&txid, output_index))
 }
 
 #[cfg(test)]

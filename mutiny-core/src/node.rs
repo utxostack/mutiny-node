@@ -39,10 +39,12 @@ use core::time::Duration;
 use esplora_client::AsyncClient;
 use futures_util::lock::Mutex;
 use hex_conservative::DisplayHex;
-use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet};
-use lightning::ln::channelmanager::ChannelDetails;
-use lightning::ln::PaymentSecret;
+use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet, WalletSource};
+use lightning::ln::channelmanager::{ChannelDetails, ChannelManager, PaymentSendFailure};
+use lightning::ln::features::{ChannelFeatures, Features, NodeFeatures};
+use lightning::ln::{ChannelId, PaymentSecret};
 use lightning::onion_message::messenger::OnionMessenger as LdkOnionMessenger;
+use lightning::routing::router::{find_route, Path, Route, RouteHop};
 use lightning::routing::scoring::ProbabilisticScoringDecayParameters;
 use lightning::sign::{EntropySource, InMemorySigner, NodeSigner, Recipient};
 use lightning::util::config::MaxDustHTLCExposure;
@@ -1483,6 +1485,193 @@ impl<S: MutinyStorage> Node<S> {
         Retry::Attempts(15)
     }
 
+    pub async fn rebalance(
+        &self,
+        amt_sats: u64,
+        src_chan_id: &ChannelId,
+        dst_chan_id: &ChannelId,
+        timeout_secs: Option<u64>,
+        labels: Vec<String>,
+    ) -> Result<MutinyInvoice, MutinyError> {
+        log_trace!(self.logger, "calling rebalance");
+
+        // initiate payment
+        let (payment_id, payment_hash) = self
+            .init_rebalance(amt_sats, src_chan_id, dst_chan_id, labels.clone())
+            .await?;
+        let timeout: u64 = timeout_secs.unwrap_or(DEFAULT_PAYMENT_TIMEOUT);
+
+        let res = self
+            .await_payment(payment_id, payment_hash, timeout, labels)
+            .await;
+        log_trace!(self.logger, "finished calling rebalance");
+
+        res
+    }
+
+    /// rebalance sends off the payment but does not wait for results
+    /// use rebalance to wait for results
+    pub async fn init_rebalance(
+        &self,
+        amt_sats: u64,
+        src_chan_id: &ChannelId,
+        dst_chan_id: &ChannelId,
+        labels: Vec<String>,
+    ) -> Result<(PaymentId, PaymentHash), MutinyError> {
+        log_trace!(self.logger, "calling rebalance");
+
+        let (invoice, _fee) = self.create_invoice(amt_sats, None, labels).await?;
+
+        let payment_hash = invoice.payment_hash().into_32();
+
+        // if read_payment_info(&self.persister.storage, &payment_hash, false, &self.logger)
+        //     .is_some_and(|p| p.status != HTLCStatus::Failed)
+        // {
+
+        //     return Err(MutinyError::NonUniquePaymentHash);
+        // }
+
+        // if read_payment_info(&self.persister.storage, &payment_hash, true, &self.logger)
+        //     .is_some_and(|p| p.status != HTLCStatus::Failed)
+        // {
+        //     return Err(MutinyError::NonUniquePaymentHash);
+        // }
+
+        // get invoice amount or use amt_sats
+        let send_msats = invoice
+            .amount_milli_satoshis()
+            .unwrap_or_else(|| amt_sats * 1_000);
+
+        // check if we have enough balance to send
+        let channels = self.channel_manager.list_channels();
+        if channels
+            .iter()
+            // only consider channels that are confirmed
+            .filter(|c| c.is_channel_ready)
+            .map(|c| c.balance_msat)
+            .sum::<u64>()
+            < send_msats
+        {
+            // Channels exist but not enough capacity
+            return Err(MutinyError::InsufficientBalance);
+        }
+
+        // make sure node at least has one connection before attempting payment
+        // wait for connection before paying, or otherwise instant fail anyways
+        // also check we've completed initial sync this run, otherwise we might create
+        // htlcs that can cause a channel to be closed
+        for _ in 0..DEFAULT_PAYMENT_TIMEOUT {
+            // check if we've been stopped
+            if self.stop.load(Ordering::Relaxed) {
+                return Err(MutinyError::NotRunning);
+            }
+            let has_usable = !self.channel_manager.list_usable_channels().is_empty();
+            let init = self.has_done_initial_sync.load(Ordering::Relaxed);
+            if has_usable && init {
+                break;
+            }
+            log_trace!(
+                self.logger,
+                "waiting for channel to be usable, has usable channels: {has_usable} finished init sync:{init}"
+            );
+            sleep(1_000).await;
+        }
+
+        let channels = self.channel_manager.list_usable_channels();
+        let cf = self.channel_manager.channel_features();
+        let nf = self.channel_manager.node_features();
+
+        fn find_hop(
+            logger: &Arc<MutinyLogger>,
+            channels: &[ChannelDetails],
+            channel_id: &ChannelId,
+            cf: ChannelFeatures,
+            nf: NodeFeatures,
+        ) -> Option<RouteHop> {
+            for c in channels {
+                if &c.channel_id == channel_id {
+                    log_debug!(
+                        logger,
+                        "channel short id {:?} config: {:?}",
+                        c.short_channel_id,
+                        c.config
+                    );
+                    let config = c.config?;
+                    return Some(RouteHop {
+                        pubkey: c.counterparty.node_id,
+                        node_features: nf,
+                        short_channel_id: c.short_channel_id?,
+                        channel_features: cf,
+                        fee_msat: config.forwarding_fee_base_msat.into(),
+                        cltv_expiry_delta: config.cltv_expiry_delta.into(),
+                        maybe_announced_channel: false,
+                    });
+                }
+            }
+            None
+        }
+
+        let h1 = find_hop(&self.logger, &channels, src_chan_id, cf.clone(), nf.clone()).ok_or_else(|| {
+            log_error!(self.logger, "failed to get src channel hop");
+            MutinyError::RoutingFailed
+        })?;
+        let h2 = find_hop(&self.logger, &channels, dst_chan_id, cf, nf).ok_or_else(|| {
+            log_error!(self.logger, "failed to get dst channel hop");
+            MutinyError::RoutingFailed
+        })?;
+        let paths = vec![Path {
+            hops: vec![h1, h2],
+            blinded_tail: None,
+        }];
+
+        let (pay_result, amt_msat) = {
+            let amount_msats = invoice
+                .amount_milli_satoshis()
+                .unwrap_or_else(|| amt_sats * 1000);
+            (
+                self.pay_invoice_with_route(&invoice, amount_msats, paths),
+                amount_msats,
+            )
+        };
+
+        let last_update = utils::now().as_secs();
+        let mut payment_info = PaymentInfo {
+            preimage: None,
+            secret: None,
+            status: HTLCStatus::InFlight,
+            amt_msat: MillisatAmount(Some(amt_msat)),
+            fee_paid_msat: None,
+            bolt11: Some(invoice.clone()),
+            payee_pubkey: None,
+            privacy_level: PrivacyLevel::NotAvailable,
+            last_update,
+        };
+
+        persist_payment_info(&self.persister.storage, &payment_hash, &payment_info, false)?;
+
+        let res = match pay_result {
+            Ok(id) => Ok((id, PaymentHash(payment_hash))),
+            Err(error) => {
+                log_error!(self.logger, "failed to make payment: {error:?}");
+                // call list channels to see what our channels are
+                let current_channels = self.channel_manager.list_channels();
+                log_debug!(
+                    self.logger,
+                    "current channel details: {:?}",
+                    current_channels
+                );
+
+                payment_info.status = HTLCStatus::Failed;
+                persist_payment_info(&self.persister.storage, &payment_hash, &payment_info, false)?;
+
+                Err(MutinyError::RoutingFailed)
+            }
+        };
+        log_trace!(self.logger, "finished calling init_rebalance");
+
+        res
+    }
+
     /// init_invoice_payment sends off the payment but does not wait for results
     /// use pay_invoice_with_timeout to wait for results
     pub async fn init_invoice_payment(
@@ -1603,6 +1792,45 @@ impl<S: MutinyStorage> Node<S> {
         log_trace!(self.logger, "finished calling init_invoice_payment");
 
         res
+    }
+
+    fn pay_invoice_with_route(
+        &self,
+        invoice: &Bolt11Invoice,
+        amount_msats: u64,
+        paths: Vec<Path>,
+    ) -> Result<PaymentId, PaymentSendFailure> {
+        let payment_id = PaymentId(invoice.payment_hash().into_32());
+        let payment_hash = PaymentHash((*invoice.payment_hash()).into_32());
+        let mut recipient_onion = RecipientOnionFields::secret_only(*invoice.payment_secret());
+        recipient_onion.payment_metadata = invoice.payment_metadata().cloned();
+        let mut payment_params = PaymentParameters::from_node_id(
+            invoice.recover_payee_pub_key(),
+            invoice.min_final_cltv_expiry_delta() as u32,
+        )
+        .with_expiry_time(invoice.expires_at().unwrap().as_secs())
+        .with_route_hints(invoice.route_hints())
+        .unwrap();
+        if let Some(features) = invoice.features() {
+            payment_params = payment_params
+                .with_bolt11_features(features.clone())
+                .unwrap();
+        }
+        let route_params = RouteParameters {
+            payment_params,
+            final_value_msat: amount_msats,
+            max_total_routing_fee_msat: None, // main change from LDK, we just want payment to succeed
+        };
+
+        let route = Route {
+            paths,
+            route_params: Some(route_params),
+        };
+
+        self.channel_manager
+            .as_ref()
+            .send_payment_with_route(&route, payment_hash, recipient_onion, payment_id)
+            .map(|_| payment_id)
     }
 
     // copied from LDK, modified to change a couple params

@@ -40,7 +40,7 @@ use futures::future::join_all;
 use hex_conservative::DisplayHex;
 use lightning::chain::Confirm;
 use lightning::events::ClosureReason;
-use lightning::ln::channelmanager::{ChannelDetails, PhantomRouteHints};
+use lightning::ln::channelmanager::{ChannelDetails, PaymentId, PhantomRouteHints};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::ChannelId;
 use lightning::routing::gossip::NodeId;
@@ -1558,6 +1558,26 @@ impl<S: MutinyStorage> NodeManager<S> {
             .pay_invoice_with_timeout(invoice, amt_sats, None, labels)
             .await;
         log_trace!(self.logger, "finished calling pay_invoice");
+
+        res
+    }
+
+    /// Rebalance
+    pub(crate) async fn rebalance(
+        &self,
+        self_node_pubkey: Option<&PublicKey>,
+        amt_sats: u64,
+        src_chan_id: &ChannelId,
+        dst_chan_id: &ChannelId,
+        labels: Vec<String>,
+    ) -> Result<MutinyInvoice, MutinyError> {
+        log_trace!(self.logger, "calling rebalance");
+
+        let node = self.get_node_by_key_or_first(self_node_pubkey).await?;
+        let res = node
+            .rebalance(amt_sats, src_chan_id, dst_chan_id, None, labels)
+            .await;
+        log_trace!(self.logger, "finished calling rebalance");
 
         res
     }
