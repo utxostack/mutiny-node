@@ -1387,7 +1387,7 @@ impl<S: MutinyStorage> Node<S> {
     ) -> Result<Bolt11Invoice, MutinyError> {
         let amount_msat = amount_sat.map(|s| s * 1_000);
         // Use first element of labels as description
-        let description = labels.get(0).unwrap_or(&"".to_string()).to_owned();
+        let description = labels.first().unwrap_or(&"".to_string()).to_owned();
 
         // wait for first sync to complete
         for _ in 0..60 {
@@ -2744,7 +2744,7 @@ mod tests {
         let amount_sats = 1_000;
 
         let (invoice, _) = node
-            .create_invoice(amount_sats, None, vec![])
+            .create_invoice(amount_sats, None, vec![], None)
             .await
             .unwrap();
 
@@ -2777,7 +2777,11 @@ mod tests {
         let storage = MemoryStorage::default();
         let node = create_node(storage).await;
 
-        let invoice = node.create_invoice(10_000, None, vec![]).await.unwrap().0;
+        let invoice = node
+            .create_invoice(10_000, None, vec![], None)
+            .await
+            .unwrap()
+            .0;
 
         let result = node
             .pay_invoice_with_timeout(&invoice, None, None, vec![])
@@ -2917,7 +2921,7 @@ mod wasm_test {
         assert_eq!(invoice.amount_milli_satoshis(), Some(amount_sats * 1000));
         match invoice.description() {
             Bolt11InvoiceDescription::Direct(desc) => {
-                assert_eq!(desc.to_string(), "");
+                assert_eq!(desc.to_string(), "test");
             }
             _ => panic!("unexpected invoice description"),
         }
@@ -2927,7 +2931,7 @@ mod wasm_test {
 
         assert_eq!(from_storage, by_hash);
         assert_eq!(from_storage.bolt11, Some(invoice.clone()));
-        assert_eq!(from_storage.description, None);
+        assert_eq!(from_storage.description, Some("test".to_string()));
         assert_eq!(from_storage.payment_hash, invoice.payment_hash().to_owned());
         assert_eq!(from_storage.preimage, None);
         assert_eq!(from_storage.payee_pubkey, None);
