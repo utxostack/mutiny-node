@@ -400,7 +400,8 @@ impl MutinyWallet {
     /// Returns after node has been stopped.
     #[wasm_bindgen]
     pub async fn stop(&self) -> Result<(), MutinyJsError> {
-        Ok(self.inner.node_manager.stop().await?)
+        // Ok(self.inner.node_manager.stop().await?)
+        Ok(self.inner.stop().await?)
     }
 
     /// Returns the mnemonic seed phrase for the wallet.
