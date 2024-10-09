@@ -1214,17 +1214,60 @@ impl<S: MutinyStorage> Node<S> {
     ) -> Result<(Bolt11Invoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
-        let res = Ok((
-            self.create_internal_invoice(
-                Some(amount_sat),
-                None,
-                route_hints,
-                labels,
-                expiry_delta_secs,
-            )
-            .await?,
-            0,
-        ));
+        let res = match self.lsp_client.as_ref() {
+            Some(lsp) => {
+                let connect = lsp.get_lsp_connection_string().await;
+                self.connect_peer(PubkeyConnectionInfo::new(&connect)?, None)
+                    .await?;
+
+                // Needs any amount over 0 if channel exists
+                // Needs amount over minimum if no channel
+                let lsp_pubkey = lsp.get_lsp_pubkey().await;
+                let inbound_capacity_msat: u64 = self
+                    .channel_manager
+                    .list_channels_with_counterparty(&lsp_pubkey)
+                    .iter()
+                    .map(|c| c.inbound_capacity_msat)
+                    .sum();
+
+                log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
+
+                let has_inbound_capacity = inbound_capacity_msat > amount_sat * 1_000;
+
+                let min_amount_sat = if has_inbound_capacity {
+                    1
+                } else {
+                    utils::min_lightning_amount(self.network, lsp.is_lsps())
+                };
+
+                if amount_sat < min_amount_sat {
+                    return Err(MutinyError::BadAmountError);
+                }
+
+                Ok((
+                    self.create_internal_invoice(
+                        Some(amount_sat),
+                        None,
+                        route_hints,
+                        labels,
+                        expiry_delta_secs,
+                    )
+                    .await?,
+                    0,
+                ))
+            }
+            None => Ok((
+                self.create_internal_invoice(
+                    Some(amount_sat),
+                    None,
+                    route_hints,
+                    labels,
+                    expiry_delta_secs,
+                )
+                .await?,
+                0,
+            )),
+        };
 
         // TODO: Skip LSP fee and invoice checking
         // let res = match self.lsp_client.as_ref() {
