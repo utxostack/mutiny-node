@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::error::MutinyError;
 use crate::keymanager::PhantomKeysManager;
 use crate::ldkstorage::PhantomChannelManager;

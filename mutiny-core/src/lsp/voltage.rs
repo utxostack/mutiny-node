@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::logging::MutinyLogger;
 use crate::lsp::{FeeRequest, InvoiceRequest, Lsp, LspConfig};
 use crate::{error::MutinyError, utils};

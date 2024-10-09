@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
