@@ -2705,6 +2705,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_map_sending_failure() {
         let amt_msat = 1_000_000;
 
