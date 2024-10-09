@@ -2710,11 +2710,21 @@ mod tests {
 
         // test simple cases
         assert_eq!(
-            map_sending_failure(RetryableSendFailure::PaymentExpired, amt_msat, &[]),
+            map_sending_failure(
+                RetryableSendFailure::PaymentExpired,
+                amt_msat,
+                &[],
+                amt_msat
+            ),
             MutinyError::InvoiceExpired
         );
         assert_eq!(
-            map_sending_failure(RetryableSendFailure::DuplicatePayment, amt_msat, &[]),
+            map_sending_failure(
+                RetryableSendFailure::DuplicatePayment,
+                amt_msat,
+                &[],
+                amt_msat
+            ),
             MutinyError::NonUniquePaymentHash
         );
 
@@ -2762,6 +2772,7 @@ mod tests {
                 RetryableSendFailure::RouteNotFound,
                 amt_msat,
                 &[channel_details.clone()],
+                0,
             ),
             MutinyError::InsufficientBalance
         );
@@ -2771,6 +2782,7 @@ mod tests {
                 RetryableSendFailure::RouteNotFound,
                 amt_msat,
                 &[channel_details.clone()],
+                0,
             ),
             MutinyError::InsufficientBalance
         );
@@ -2783,6 +2795,7 @@ mod tests {
                 RetryableSendFailure::RouteNotFound,
                 amt_msat,
                 &[channel_details.clone()],
+                amt_msat + 10,
             ),
             MutinyError::ReserveAmountError
         );
@@ -2794,6 +2807,7 @@ mod tests {
                 RetryableSendFailure::RouteNotFound,
                 amt_msat,
                 &[channel_details.clone()],
+                amt_msat + 10,
             ),
             MutinyError::ReserveAmountError
         );
@@ -2805,6 +2819,7 @@ mod tests {
                 RetryableSendFailure::RouteNotFound,
                 amt_msat,
                 &[channel_details.clone()],
+                amt_msat + 10,
             ),
             MutinyError::RoutingFailed
         );
