@@ -55,16 +55,15 @@ use crate::{logging::LOGGING_KEY, nodemanager::NodeManagerBuilder};
 use crate::{
     onchain::get_esplora_url,
     storage::{
-        get_payment_hash_from_key, get_transaction_details, list_payment_info,
-        persist_payment_info, IndexItem, MutinyStorage, DEVICE_ID_KEY, EXPECTED_NETWORK_KEY,
-        NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX, PAYMENT_INBOUND_PREFIX_KEY,
-        PAYMENT_OUTBOUND_PREFIX_KEY, TRANSACTION_DETAILS_PREFIX_KEY,
+        get_payment_hash_from_key, get_transaction_details, list_payment_info, IndexItem,
+        MutinyStorage, DEVICE_ID_KEY, EXPECTED_NETWORK_KEY, NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
+        PAYMENT_INBOUND_PREFIX_KEY, PAYMENT_OUTBOUND_PREFIX_KEY, TRANSACTION_DETAILS_PREFIX_KEY,
     },
 };
 use bdk_chain::ConfirmationTime;
 use bip39::Mnemonic;
 pub use bitcoin;
-use bitcoin::secp256k1::{PublicKey, ThirtyTwoByteHash};
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::{bip32::Xpriv, Transaction};
 use bitcoin::{hashes::sha256, Network, Txid};
 use bitcoin::{hashes::Hash, Address};
@@ -518,7 +517,6 @@ pub struct MutinyWalletConfigBuilder {
     lsp_connection_string: Option<String>,
     lsp_token: Option<String>,
     subscription_url: Option<String>,
-    scorer_url: Option<String>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
@@ -540,7 +538,6 @@ impl MutinyWalletConfigBuilder {
             lsp_connection_string: None,
             lsp_token: None,
             subscription_url: None,
-            scorer_url: None,
             blind_auth_url: None,
             hermes_url: None,
             do_not_connect_peers: false,
@@ -585,10 +582,6 @@ impl MutinyWalletConfigBuilder {
         self.subscription_url = Some(subscription_url);
     }
 
-    pub fn with_scorer_url(&mut self, scorer_url: String) {
-        self.scorer_url = Some(scorer_url);
-    }
-
     pub fn with_blind_auth_url(&mut self, blind_auth_url: String) {
         self.blind_auth_url = Some(blind_auth_url);
     }
@@ -628,7 +621,6 @@ impl MutinyWalletConfigBuilder {
             lsp_connection_string: self.lsp_connection_string,
             lsp_token: self.lsp_token,
             subscription_url: self.subscription_url,
-            scorer_url: self.scorer_url,
             blind_auth_url: self.blind_auth_url,
             hermes_url: self.hermes_url,
             do_not_connect_peers: self.do_not_connect_peers,
@@ -651,7 +643,6 @@ pub struct MutinyWalletConfig {
     lsp_connection_string: Option<String>,
     lsp_token: Option<String>,
     subscription_url: Option<String>,
-    scorer_url: Option<String>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
@@ -1052,8 +1043,12 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             .read()
             .await
             .iter()
-            .flat_map(|(_, n)| n.channel_manager.list_channels())
-            .map(|c| c.balance_msat)
+            .flat_map(|(_, n)| {
+                n.chain_monitor
+                    .get_claimable_balances(&[])
+                    .into_iter()
+                    .map(|b| b.claimable_amount_satoshis())
+            })
             .sum::<u64>()
             > 0
         {
@@ -2416,7 +2411,7 @@ mod tests {
         let expected = vec![
             IndexItem {
                 timestamp: None,
-                key: format!("{ONCHAIN_PREFIX}{}", tx1.txid()),
+                key: format!("{ONCHAIN_PREFIX}{}", tx1.compute_txid()),
             },
             IndexItem {
                 timestamp: None,
@@ -2463,7 +2458,7 @@ mod tests {
             },
             IndexItem {
                 timestamp: Some(1234),
-                key: format!("{ONCHAIN_PREFIX}{}", tx2.txid()),
+                key: format!("{ONCHAIN_PREFIX}{}", tx2.compute_txid()),
             },
         ];
 
