@@ -1,4 +1,4 @@
-use crate::lsp::{InvoiceRequest, LspConfig};
+use crate::lsp::LspConfig;
 use crate::nodemanager::ChannelClosure;
 use crate::peermanager::LspMessageRouter;
 use crate::storage::MutinyStorage;
@@ -1210,6 +1210,7 @@ impl<S: MutinyStorage> Node<S> {
         amount_sat: u64,
         route_hints: Option<Vec<PhantomRouteHints>>,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<(Bolt11Invoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
@@ -1243,113 +1244,177 @@ impl<S: MutinyStorage> Node<S> {
                     return Err(MutinyError::BadAmountError);
                 }
 
-                match lsp {
-                    AnyLsp::VoltageFlow(lock) => {
-                        // check the fee from the LSP
-                        let lsp_fee = lsp
-                            .get_lsp_fee_msat(FeeRequest {
-                                pubkey: self.pubkey.encode().to_lower_hex_string(),
-                                amount_msat: amount_sat * 1000,
-                            })
-                            .await?;
-
-                        // Convert the fee from msat to sat for comparison and subtraction
-                        let lsp_fee_sat = lsp_fee.fee_amount_msat / 1000;
-
-                        // Ensure that the fee is less than the amount being requested.
-                        // If it isn't, we don't subtract it.
-                        // This prevents amount from being subtracted down to 0.
-                        // This will mean that the LSP fee will be paid by the payer instead.
-                        let amount_minus_fee = if lsp_fee_sat < amount_sat {
-                            amount_sat
-                                .checked_sub(lsp_fee_sat)
-                                .ok_or(MutinyError::BadAmountError)?
-                        } else {
-                            amount_sat
-                        };
-                        let client = lock.read().await;
-                        let invoice = self
-                            .create_internal_invoice(
-                                Some(amount_minus_fee),
-                                Some(lsp_fee.fee_amount_msat),
-                                route_hints,
-                                labels,
-                            )
-                            .await?;
-
-                        let lsp_invoice = client
-                            .get_lsp_invoice(InvoiceRequest {
-                                bolt11: Some(invoice.to_string()),
-                                fee_id: lsp_fee.id,
-                            })
-                            .await?;
-
-                        if let Some(error) =
-                            client.verify_invoice(&invoice, &lsp_invoice, lsp_fee.fee_amount_msat)
-                        {
-                            log_error!(self.logger, "{error}");
-                            return Err(MutinyError::InvoiceCreationFailed);
-                        }
-
-                        log_debug!(self.logger, "Got wrapped invoice from LSP: {lsp_invoice}");
-
-                        Ok((lsp_invoice, lsp_fee_sat))
-                    }
-                    AnyLsp::Lsps(client) => {
-                        if has_inbound_capacity {
-                            Ok((
-                                self.create_internal_invoice(
-                                    Some(amount_sat),
-                                    None,
-                                    route_hints,
-                                    labels,
-                                )
-                                .await?,
-                                0,
-                            ))
-                        } else {
-                            // check the fee from the LSP
-                            let lsp_fee = lsp
-                                .get_lsp_fee_msat(FeeRequest {
-                                    pubkey: self.pubkey.encode().to_lower_hex_string(),
-                                    amount_msat: amount_sat * 1000,
-                                })
-                                .await?;
-
-                            let lsp_invoice = match client
-                                .get_lsp_invoice(InvoiceRequest {
-                                    bolt11: None,
-                                    fee_id: lsp_fee.id,
-                                })
-                                .await
-                            {
-                                Ok(invoice) => {
-                                    self.save_invoice_payment_info(
-                                        invoice.clone(),
-                                        Some(amount_sat * 1_000),
-                                        Some(lsp_fee.fee_amount_msat),
-                                        labels,
-                                    )
-                                    .await?;
-
-                                    invoice
-                                }
-                                Err(e) => {
-                                    log_error!(self.logger, "Failed to get invoice from LSP: {e}");
-                                    return Err(e);
-                                }
-                            };
-                            Ok((lsp_invoice, 0))
-                        }
-                    }
-                }
+                Ok((
+                    self.create_internal_invoice(
+                        Some(amount_sat),
+                        None,
+                        route_hints,
+                        labels,
+                        expiry_delta_secs,
+                    )
+                    .await?,
+                    0,
+                ))
             }
             None => Ok((
-                self.create_internal_invoice(Some(amount_sat), None, route_hints, labels)
-                    .await?,
+                self.create_internal_invoice(
+                    Some(amount_sat),
+                    None,
+                    route_hints,
+                    labels,
+                    expiry_delta_secs,
+                )
+                .await?,
                 0,
             )),
         };
+
+        // TODO: Skip LSP fee and invoice checking
+        // let res = match self.lsp_client.as_ref() {
+        //     Some(lsp) => {
+        //         let connect = lsp.get_lsp_connection_string().await;
+        //         self.connect_peer(PubkeyConnectionInfo::new(&connect)?, None)
+        //             .await?;
+
+        //         // Needs any amount over 0 if channel exists
+        //         // Needs amount over minimum if no channel
+        //         let lsp_pubkey = lsp.get_lsp_pubkey().await;
+        //         let inbound_capacity_msat: u64 = self
+        //             .channel_manager
+        //             .list_channels_with_counterparty(&lsp_pubkey)
+        //             .iter()
+        //             .map(|c| c.inbound_capacity_msat)
+        //             .sum();
+
+        //         log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
+
+        //         let has_inbound_capacity = inbound_capacity_msat > amount_sat * 1_000;
+
+        //         let min_amount_sat = if has_inbound_capacity {
+        //             1
+        //         } else {
+        //             utils::min_lightning_amount(self.network, lsp.is_lsps())
+        //         };
+
+        //         if amount_sat < min_amount_sat {
+        //             return Err(MutinyError::BadAmountError);
+        //         }
+
+        //         match lsp {
+        //             AnyLsp::VoltageFlow(lock) => {
+        //                 // check the fee from the LSP
+        //                 let lsp_fee = lsp
+        //                     .get_lsp_fee_msat(FeeRequest {
+        //                         pubkey: self.pubkey.encode().to_lower_hex_string(),
+        //                         amount_msat: amount_sat * 1000,
+        //                     })
+        //                     .await?;
+
+        //                 // Convert the fee from msat to sat for comparison and subtraction
+        //                 let lsp_fee_sat = lsp_fee.fee_amount_msat / 1000;
+
+        //                 // Ensure that the fee is less than the amount being requested.
+        //                 // If it isn't, we don't subtract it.
+        //                 // This prevents amount from being subtracted down to 0.
+        //                 // This will mean that the LSP fee will be paid by the payer instead.
+        //                 let amount_minus_fee = if lsp_fee_sat < amount_sat {
+        //                     amount_sat
+        //                         .checked_sub(lsp_fee_sat)
+        //                         .ok_or(MutinyError::BadAmountError)?
+        //                 } else {
+        //                     amount_sat
+        //                 };
+        //                 let client = lock.read().await;
+        //                 let invoice = self
+        //                     .create_internal_invoice(
+        //                         Some(amount_minus_fee),
+        //                         Some(lsp_fee.fee_amount_msat),
+        //                         route_hints,
+        //                         labels,
+        //                         expiry_delta_secs,
+        //                     )
+        //                     .await?;
+
+        //                 let lsp_invoice = client
+        //                     .get_lsp_invoice(InvoiceRequest {
+        //                         bolt11: Some(invoice.to_string()),
+        //                         fee_id: lsp_fee.id,
+        //                     })
+        //                     .await?;
+
+        //                 if let Some(error) =
+        //                     client.verify_invoice(&invoice, &lsp_invoice, lsp_fee.fee_amount_msat)
+        //                 {
+        //                     log_error!(self.logger, "{error}");
+        //                     return Err(MutinyError::InvoiceCreationFailed);
+        //                 }
+
+        //                 log_debug!(self.logger, "Got wrapped invoice from LSP: {lsp_invoice}");
+
+        //                 Ok((lsp_invoice, lsp_fee_sat))
+        //             }
+        //             AnyLsp::Lsps(client) => {
+        //                 if has_inbound_capacity {
+        //                     Ok((
+        //                         self.create_internal_invoice(
+        //                             Some(amount_sat),
+        //                             None,
+        //                             route_hints,
+        //                             labels,
+        //                             expiry_delta_secs,
+        //                         )
+        //                         .await?,
+        //                         0,
+        //                     ))
+        //                 } else {
+        //                     // check the fee from the LSP
+        //                     let lsp_fee = lsp
+        //                         .get_lsp_fee_msat(FeeRequest {
+        //                             pubkey: self.pubkey.encode().to_lower_hex_string(),
+        //                             amount_msat: amount_sat * 1000,
+        //                         })
+        //                         .await?;
+
+        //                     let lsp_invoice = match client
+        //                         .get_lsp_invoice(InvoiceRequest {
+        //                             bolt11: None,
+        //                             fee_id: lsp_fee.id,
+        //                         })
+        //                         .await
+        //                     {
+        //                         Ok(invoice) => {
+        //                             self.save_invoice_payment_info(
+        //                                 invoice.clone(),
+        //                                 Some(amount_sat * 1_000),
+        //                                 Some(lsp_fee.fee_amount_msat),
+        //                                 labels,
+        //                             )
+        //                             .await?;
+
+        //                             invoice
+        //                         }
+        //                         Err(e) => {
+        //                             log_error!(self.logger, "Failed to get invoice from LSP: {e}");
+        //                             return Err(e);
+        //                         }
+        //                     };
+        //                     Ok((lsp_invoice, 0))
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     None => Ok((
+        //         self.create_internal_invoice(
+        //             Some(amount_sat),
+        //             None,
+        //             route_hints,
+        //             labels,
+        //             expiry_delta_secs,
+        //         )
+        //         .await?,
+        //         0,
+        //     )),
+        // };
         log_trace!(self.logger, "finished calling create_invoice");
 
         res
@@ -1361,10 +1426,11 @@ impl<S: MutinyStorage> Node<S> {
         fee_amount_msat: Option<u64>,
         route_hints: Option<Vec<PhantomRouteHints>>,
         labels: Vec<String>,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<Bolt11Invoice, MutinyError> {
         let amount_msat = amount_sat.map(|s| s * 1_000);
-        // Set description to empty string to make smallest possible invoice/QR code
-        let description = "".to_string();
+        // Use first element of labels as description
+        let description = labels.first().unwrap_or(&"".to_string()).to_owned();
 
         // wait for first sync to complete
         for _ in 0..60 {
@@ -1391,7 +1457,7 @@ impl<S: MutinyStorage> Node<S> {
                     amount_msat,
                     description,
                     now,
-                    3600,
+                    expiry_delta_secs.unwrap_or(3600),
                     Some(40),
                 )
             }
@@ -1399,7 +1465,7 @@ impl<S: MutinyStorage> Node<S> {
                 amount_msat,
                 None,
                 description,
-                3600,
+                expiry_delta_secs.unwrap_or(3600),
                 r,
                 self.keys_manager.clone(),
                 self.keys_manager.clone(),
@@ -2721,7 +2787,7 @@ mod tests {
         let amount_sats = 1_000;
 
         let (invoice, _) = node
-            .create_invoice(amount_sats, None, vec![])
+            .create_invoice(amount_sats, None, vec![], None)
             .await
             .unwrap();
 
@@ -2754,7 +2820,11 @@ mod tests {
         let storage = MemoryStorage::default();
         let node = create_node(storage).await;
 
-        let invoice = node.create_invoice(10_000, None, vec![]).await.unwrap().0;
+        let invoice = node
+            .create_invoice(10_000, None, vec![], None)
+            .await
+            .unwrap()
+            .0;
 
         let result = node
             .pay_invoice_with_timeout(&invoice, None, None, vec![])
@@ -2887,14 +2957,14 @@ mod wasm_test {
         let labels = vec![label.clone()];
 
         let (invoice, _) = node
-            .create_invoice(amount_sats, None, labels.clone())
+            .create_invoice(amount_sats, None, labels.clone(), None)
             .await
             .unwrap();
 
         assert_eq!(invoice.amount_milli_satoshis(), Some(amount_sats * 1000));
         match invoice.description() {
             Bolt11InvoiceDescription::Direct(desc) => {
-                assert_eq!(desc.to_string(), "");
+                assert_eq!(desc.to_string(), "test");
             }
             _ => panic!("unexpected invoice description"),
         }
@@ -2904,7 +2974,7 @@ mod wasm_test {
 
         assert_eq!(from_storage, by_hash);
         assert_eq!(from_storage.bolt11, Some(invoice.clone()));
-        assert_eq!(from_storage.description, None);
+        assert_eq!(from_storage.description, Some("test".to_string()));
         assert_eq!(from_storage.payment_hash, invoice.payment_hash().to_owned());
         assert_eq!(from_storage.preimage, None);
         assert_eq!(from_storage.payee_pubkey, None);
@@ -2933,7 +3003,11 @@ mod wasm_test {
         let storage = MemoryStorage::default();
         let node = create_node(storage).await;
 
-        let invoice = node.create_invoice(10_000, None, vec![]).await.unwrap().0;
+        let invoice = node
+            .create_invoice(10_000, None, vec![], None)
+            .await
+            .unwrap()
+            .0;
 
         let result = node
             .pay_invoice_with_timeout(&invoice, None, None, vec![])

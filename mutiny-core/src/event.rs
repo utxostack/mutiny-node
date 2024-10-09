@@ -410,6 +410,10 @@ impl<S: MutinyStorage> EventHandler<S> {
                     Some(ref lsp) => Some(lsp.get_lsp_pubkey().await),
                     None => None,
                 };
+                log_debug!(
+                    self.logger,
+                    "EVENT: OpenChannelRequest Lsp pubkey: {lsp_pubkey:?}"
+                );
 
                 if lsp_pubkey.as_ref() != Some(&counterparty_node_id) {
                     // did not match the lsp pubkey, normal open
@@ -429,6 +433,10 @@ impl<S: MutinyStorage> EventHandler<S> {
                             internal_channel_id,
                         );
                     log_result(result);
+                    log_debug!(
+                        self.logger,
+                        "Accept zero confirmation channel when matched LSP Pubkey"
+                    );
                 }
             }
             Event::PaymentPathSuccessful { .. } => {

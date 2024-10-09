@@ -400,7 +400,8 @@ impl MutinyWallet {
     /// Returns after node has been stopped.
     #[wasm_bindgen]
     pub async fn stop(&self) -> Result<(), MutinyJsError> {
-        Ok(self.inner.node_manager.stop().await?)
+        // Ok(self.inner.node_manager.stop().await?)
+        Ok(self.inner.stop().await?)
     }
 
     /// Returns the mnemonic seed phrase for the wallet.
@@ -725,9 +726,14 @@ impl MutinyWallet {
     pub async fn create_invoice(
         &self,
         amount: u64,
-        labels: Vec<String>,
+        label: String,
+        expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyJsError> {
-        Ok(self.inner.create_invoice(amount, labels).await?.into())
+        Ok(self
+            .inner
+            .create_invoice(amount, vec![label], expiry_delta_secs)
+            .await?
+            .into())
     }
 
     /// Pays a lightning invoice from the selected node.
