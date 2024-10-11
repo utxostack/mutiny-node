@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
-use bdk_chain::{BlockId, ConfirmationTime, Indexer};
+use bdk_chain::{BlockId, ConfirmationBlockTime, ConfirmationTime, Indexer, TxUpdate};
 use bdk_esplora::EsploraAsyncExt;
 use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::psbt::PsbtUtils;
@@ -309,13 +309,32 @@ impl<S: MutinyStorage> OnChainWallet<S> {
     ) -> Result<(), MutinyError> {
         let txid = tx.compute_txid();
         match position {
-            ConfirmationTime::Confirmed { .. } => {
+            ConfirmationTime::Confirmed { time, .. } => {
                 // if the transaction is confirmed and we have the block id,
                 // we can insert it directly
                 if let Some(block_id) = block_id {
                     let mut wallet = self.wallet.try_write()?;
                     wallet.insert_checkpoint(block_id)?;
-                    wallet.insert_tx(tx);
+                    let txid = tx.compute_txid();
+                    let update = Update {
+                        tx_update: TxUpdate {
+                            txs: vec![Arc::new(tx)],
+                            anchors: [(
+                                ConfirmationBlockTime {
+                                    block_id,
+                                    confirmation_time: time,
+                                },
+                                txid,
+                            )]
+                            .into_iter()
+                            .collect(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+                    wallet
+                        .apply_update_at(update, Some(time))
+                        .map_err(|_err| MutinyError::WalletOperationFailed)?;
                 } else {
                     // if the transaction is confirmed and we don't have the block id,
                     // we should just sync the wallet otherwise we can get an error
@@ -325,14 +344,14 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                     return Ok(());
                 }
             }
-            ConfirmationTime::Unconfirmed { .. } => {
+            ConfirmationTime::Unconfirmed { last_seen } => {
                 // if the transaction is unconfirmed, we can just insert it
                 let mut wallet = self.wallet.try_write()?;
 
                 // if we already have the transaction, we don't need to insert it
                 if wallet.get_tx(txid).is_none() {
                     // insert tx and commit changes
-                    wallet.insert_tx(tx);
+                    wallet.apply_unconfirmed_txs(vec![(tx, last_seen)]);
                 } else {
                     log_debug!(
                         self.logger,

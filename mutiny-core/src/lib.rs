@@ -2238,6 +2238,9 @@ mod tests {
 
     #[test]
     async fn test_sort_index_item() {
+        let test_name = "test_sort_index_item";
+        log!("{}", test_name);
+
         let storage = MemoryStorage::new(None, None, None);
         let seed = generate_seed(12).expect("Failed to gen seed");
         let network = Network::Regtest;
