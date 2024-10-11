@@ -2160,7 +2160,7 @@ mod tests {
         // insert fake tx into wallet
         {
             let mut wallet = nm.wallet.wallet.try_write().unwrap();
-            assert!(wallet.insert_tx(fake_tx.clone(),));
+            wallet.apply_unconfirmed_txs(vec![(fake_tx.clone(), 0)]);
             storage
                 .write_changes(&wallet.take_staged().unwrap())
                 .unwrap();
