@@ -13,3 +13,11 @@ opt-level = "z"
 
 [profile.release.package.mutiny-wasm]
 opt-level = "z"
+
+[patch.crates-io]
+lightning-background-processor = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning-types = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning-invoice = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning-rapid-gossip-sync = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning-transaction-sync = { git = "https://github.com/jjyr/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
