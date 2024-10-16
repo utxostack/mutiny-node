@@ -1596,6 +1596,7 @@ impl<S: MutinyStorage> Node<S> {
             .into_iter()
             .map(|b| b.claimable_amount_satoshis())
             .sum::<u64>()
+            * 1000
             < send_msats
         {
             // Channels exist but not enough capacity
@@ -1669,7 +1670,8 @@ impl<S: MutinyStorage> Node<S> {
                     .get_claimable_balances(&[])
                     .into_iter()
                     .map(|b| b.claimable_amount_satoshis())
-                    .sum();
+                    .sum::<u64>()
+                    * 1000;
                 log_debug!(
                     self.logger,
                     "current channel details: {:?}",
@@ -1821,6 +1823,7 @@ impl<S: MutinyStorage> Node<S> {
             .into_iter()
             .map(|b| b.claimable_amount_satoshis())
             .sum::<u64>()
+            * 1000
             < amt_msats
         {
             // Channels exist but not enough capacity
@@ -1921,7 +1924,8 @@ impl<S: MutinyStorage> Node<S> {
                     .get_claimable_balances(&[])
                     .into_iter()
                     .map(|b| b.claimable_amount_satoshis())
-                    .sum();
+                    .sum::<u64>()
+                    * 1000;
                 Err(map_sending_failure(
                     error,
                     amt_msats,

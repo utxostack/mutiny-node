@@ -964,7 +964,7 @@ impl<S: MutinyStorage> NodeManager<S> {
         };
 
         let nodes = self.nodes.read().await;
-        let lightning_msats: u64 = nodes
+        let lightning_sats: u64 = nodes
             .iter()
             .flat_map(|(_, n)| {
                 n.chain_monitor
@@ -999,7 +999,7 @@ impl<S: MutinyStorage> NodeManager<S> {
         Ok(NodeBalance {
             confirmed: (onchain.confirmed + onchain.trusted_pending).to_sat(),
             unconfirmed: (onchain.untrusted_pending + onchain.immature).to_sat(),
-            lightning: lightning_msats / 1_000,
+            lightning: lightning_sats,
             force_close,
         })
     }
