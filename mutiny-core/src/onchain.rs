@@ -146,7 +146,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
     fn try_commit_update(&self, update: Update) -> Result<bool, MutinyError> {
         // get wallet lock for writing and apply the update
         match self.wallet.try_write() {
-            Ok(mut wallet) => match wallet.apply_update(update) {
+            Ok(mut wallet) => match wallet.apply_update_at(update, Some(now().as_secs())) {
                 Ok(_) => {
                     // commit the changes
                     if let Some(changeset) = wallet.take_staged() {
