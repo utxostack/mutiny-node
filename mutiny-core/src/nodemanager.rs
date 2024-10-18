@@ -966,12 +966,8 @@ impl<S: MutinyStorage> NodeManager<S> {
         let nodes = self.nodes.read().await;
         let lightning_sats: u64 = nodes
             .iter()
-            .flat_map(|(_, n)| {
-                n.chain_monitor
-                    .get_claimable_balances(&[])
-                    .into_iter()
-                    .map(|b| b.claimable_amount_satoshis())
-            })
+            .flat_map(|(_, n)| n.chain_monitor.get_claimable_balances(&[]))
+            .map(|b| b.claimable_amount_satoshis())
             .sum::<u64>();
 
         // get the amount in limbo from force closes
@@ -982,16 +978,7 @@ impl<S: MutinyStorage> NodeManager<S> {
                 let ignored_channels: Vec<&ChannelDetails> = channels.iter().collect();
                 n.chain_monitor.get_claimable_balances(&ignored_channels)
             })
-            // need to filter out pending mutual closes, these are counted in the on-chain balance
-            // comment out for now until https://github.com/lightningdevkit/rust-lightning/issues/2738
-            // .filter(|b| {
-            //     !matches!(
-            //         b,
-            //         Balance::ClaimableOnChannelClose { .. }
-            //             | Balance::ClaimableAwaitingConfirmations { .. }
-            //     )
-            // })
-            .map(|bal| bal.claimable_amount_satoshis())
+            .map(|b| b.claimable_amount_satoshis())
             .sum();
 
         log_trace!(self.logger, "finished calling get_balance");
@@ -999,7 +986,7 @@ impl<S: MutinyStorage> NodeManager<S> {
         Ok(NodeBalance {
             confirmed: (onchain.confirmed + onchain.trusted_pending).to_sat(),
             unconfirmed: (onchain.untrusted_pending + onchain.immature).to_sat(),
-            lightning: lightning_sats,
+            lightning: lightning_sats.saturating_sub(force_close),
             force_close,
         })
     }
