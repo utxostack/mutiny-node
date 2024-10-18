@@ -1160,7 +1160,7 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 [[package]]
 name = "lightning"
 version = "0.0.124"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1173,7 +1173,7 @@ dependencies = [
 [[package]]
 name = "lightning-background-processor"
 version = "0.0.124"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1184,7 +1184,7 @@ dependencies = [
 [[package]]
 name = "lightning-common"
 version = "0.1.0"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "web-time",
 ]
@@ -1192,7 +1192,7 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.32.0"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1230,7 +1230,7 @@ dependencies = [
 [[package]]
 name = "lightning-rapid-gossip-sync"
 version = "0.0.124"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1240,19 +1240,20 @@ dependencies = [
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.0.124"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bdk-macros",
  "bitcoin",
  "esplora-client",
  "futures",
  "lightning",
+ "lightning-common",
 ]
 
 [[package]]
 name = "lightning-types"
 version = "0.1.0"
-source = "git+https://github.com/jjyr/rust-lightning.git?branch=fix-channel-manager-wasm32#9e86f0d34c4b2fb31c6d80c99cd53d98f9ecf8da"
+source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
