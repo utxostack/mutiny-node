@@ -403,11 +403,16 @@ impl<S: MutinyStorage> EventHandler<S> {
             Event::OpenChannelRequest {
                 temporary_channel_id,
                 counterparty_node_id,
+                channel_type,
                 ..
             } => {
+                let lsp_pubkey = match self.lsp_client {
+                    Some(ref lsp) => Some(lsp.get_lsp_pubkey().await),
+                    None => None,
+                };
                 log_debug!(
                     self.logger,
-                    "EVENT: OpenChannelRequest incoming: {counterparty_node_id}"
+                    "EVENT: OpenChannelRequest counterparty: {counterparty_node_id} and LSP pubkey: {lsp_pubkey:?}"
                 );
 
                 let mut internal_channel_id_bytes = [0u8; 16];
@@ -424,25 +429,19 @@ impl<S: MutinyStorage> EventHandler<S> {
                     Err(e) => log_debug!(self.logger, "EVENT: OpenChannelRequest error: {e:?}"),
                 };
 
-                let lsp_pubkey = match self.lsp_client {
-                    Some(ref lsp) => Some(lsp.get_lsp_pubkey().await),
-                    None => None,
-                };
+                let is_zero_conf_channel = channel_type.requires_zero_conf();
                 log_debug!(
                     self.logger,
-                    "EVENT: OpenChannelRequest Lsp pubkey: {lsp_pubkey:?}"
+                    "EVENT: OpenChannelRequest zero-conf channel: {is_zero_conf_channel}"
                 );
 
                 if lsp_pubkey.as_ref() != Some(&counterparty_node_id) {
-                    // did not match the lsp pubkey, normal open
-                    let result = self.channel_manager.accept_inbound_channel(
-                        &temporary_channel_id,
-                        &counterparty_node_id,
-                        internal_channel_id,
+                    log_error!(
+                        self.logger,
+                        "EVENT: OpenChannelRequest error: The counterparty node id doesn't match the LSP pubkey"
                     );
-                    log_result(result);
-                } else {
-                    // matched lsp pubkey, accept 0 conf
+                } else if is_zero_conf_channel {
+                    // if the event request channel type is 0-conf, accept 0 conf channel
                     let result = self
                         .channel_manager
                         .accept_inbound_channel_from_trusted_peer_0conf(
@@ -455,6 +454,14 @@ impl<S: MutinyStorage> EventHandler<S> {
                         self.logger,
                         "Accept zero confirmation channel when matched LSP Pubkey"
                     );
+                } else {
+                    // if the event request channel type is not 0-conf, open normal channel
+                    let result = self.channel_manager.accept_inbound_channel(
+                        &temporary_channel_id,
+                        &counterparty_node_id,
+                        internal_channel_id,
+                    );
+                    log_result(result);
                 }
             }
             Event::PaymentPathSuccessful { .. } => {
