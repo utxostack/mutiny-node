@@ -91,7 +91,7 @@ use std::{
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-const INITIAL_RECONNECTION_DELAY: u64 = 10;
+const INITIAL_RECONNECTION_DELAY: u64 = 2;
 const MAX_RECONNECTION_DELAY: u64 = 60;
 
 pub(crate) type BumpTxEventHandler<S: MutinyStorage> = BumpTransactionEventHandler<
