@@ -864,6 +864,19 @@ impl MutinyWallet {
         )?)
     }
 
+    /// Returns all the on-chain and lightning activity from the wallet.
+    #[wasm_bindgen]
+    pub async fn get_activity(
+        &self,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<JsValue /* Vec<ActivityItem> */, MutinyJsError> {
+        // get activity from the node manager
+        let activity = self.inner.get_activity(limit, offset)?;
+        let activity: Vec<ActivityItem> = activity.into_iter().map(|a| a.into()).collect();
+        Ok(JsValue::from_serde(&activity)?)
+    }
+
     pub fn get_address_labels(
         &self,
     ) -> Result<JsValue /* Map<Address, Vec<String>> */, MutinyJsError> {

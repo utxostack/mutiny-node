@@ -13,7 +13,110 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[wasm_bindgen]
+pub enum ActivityType {
+    OnChain,
+    Lightning,
+    ChannelOpen,
+    ChannelClose,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[wasm_bindgen]
+pub struct ActivityItem {
+    pub kind: ActivityType,
+    id: String,
+    pub amount_sats: Option<u64>,
+    pub inbound: bool,
+    pub(crate) labels: Vec<String>,
+    pub last_updated: Option<u64>,
+    privacy_level: String,
+}
+
+#[wasm_bindgen]
+impl ActivityItem {
+    #[wasm_bindgen(getter)]
+    pub fn value(&self) -> JsValue {
+        JsValue::from_serde(&serde_json::to_value(self).unwrap()).unwrap()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn labels(&self) -> Vec<String> {
+        self.labels.clone()
+    }
+}
+
+impl From<mutiny_core::ActivityItem> for ActivityItem {
+    fn from(a: mutiny_core::ActivityItem) -> Self {
+        let kind = match a {
+            mutiny_core::ActivityItem::OnChain(_) => {
+                if a.is_channel_open() {
+                    ActivityType::ChannelOpen
+                } else {
+                    ActivityType::OnChain
+                }
+            }
+            mutiny_core::ActivityItem::Lightning(_) => ActivityType::Lightning,
+            mutiny_core::ActivityItem::ChannelClosed(_) => ActivityType::ChannelClose,
+        };
+
+        let id = match a {
+            mutiny_core::ActivityItem::OnChain(ref t) => t.internal_id.to_string(),
+            mutiny_core::ActivityItem::Lightning(ref ln) => {
+                ln.payment_hash.to_byte_array().to_lower_hex_string()
+            }
+            mutiny_core::ActivityItem::ChannelClosed(ref c) => c
+                .user_channel_id
+                .map(|c| c.to_lower_hex_string())
+                .unwrap_or_default(),
+        };
+
+        let (inbound, amount_sats) = match a {
+            mutiny_core::ActivityItem::OnChain(ref t) => {
+                let inbound = t.received > t.sent;
+                let amount_sats = if inbound {
+                    Some(t.received - t.sent)
+                } else {
+                    Some(t.sent - t.received)
+                };
+                (inbound, amount_sats)
+            }
+            mutiny_core::ActivityItem::Lightning(ref ln) => (ln.inbound, ln.amount_sats),
+            mutiny_core::ActivityItem::ChannelClosed(_) => (false, None),
+        };
+
+        let privacy_level = match kind {
+            ActivityType::OnChain => PrivacyLevel::NotAvailable,
+            ActivityType::Lightning => {
+                if let mutiny_core::ActivityItem::Lightning(ref ln) = a {
+                    ln.privacy_level
+                } else {
+                    PrivacyLevel::NotAvailable
+                }
+            }
+            ActivityType::ChannelOpen => PrivacyLevel::NotAvailable,
+            ActivityType::ChannelClose => PrivacyLevel::NotAvailable,
+        };
+
+        ActivityItem {
+            kind,
+            id,
+            amount_sats,
+            inbound,
+            labels: a.labels(),
+            last_updated: a.last_updated(),
+            privacy_level: privacy_level.to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 #[wasm_bindgen]
 pub struct MutinyInvoice {
     bolt11: Option<Bolt11Invoice>,
