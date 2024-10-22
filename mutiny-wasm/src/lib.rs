@@ -116,16 +116,14 @@ impl MutinyWallet {
             callback: Arc::new(move |event| {
                 const KEY: &str = "peer_connection_event_broadcast_channel";
                 let global = web_sys::js_sys::global();
-                let channel: BroadcastChannel =
-                    match web_sys::js_sys::Reflect::get(&global, &(KEY.into())) {
-                        Ok(channel) => channel.dyn_into().unwrap(),
-                        Err(_) => {
-                            let channel = web_sys::BroadcastChannel::new(&topic).unwrap();
-                            web_sys::js_sys::Reflect::set(&global, &(KEY.into()), &channel)
-                                .unwrap();
-                            channel
-                        }
-                    };
+                let value = web_sys::js_sys::Reflect::get(&global, &(KEY.into())).unwrap();
+                let channel: BroadcastChannel = if value.is_undefined() {
+                    let channel = web_sys::BroadcastChannel::new(&topic).unwrap();
+                    web_sys::js_sys::Reflect::set(&global, &(KEY.into()), &channel).unwrap();
+                    channel
+                } else {
+                    value.dyn_into().unwrap()
+                };
                 let event = serde_wasm_bindgen::to_value(&event).expect("convert to js");
                 channel.post_message(&event).unwrap();
             }),
