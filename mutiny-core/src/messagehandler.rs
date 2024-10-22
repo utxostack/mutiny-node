@@ -7,12 +7,32 @@ use lightning::ln::msgs::{DecodeError, LightningError};
 use lightning::ln::peer_handler::CustomMessageHandler;
 use lightning::ln::wire::{CustomMessageReader, Type};
 use lightning::util::ser::{Writeable, Writer};
+use serde::{Deserialize, Serialize};
 
 use crate::node::LiquidityManager;
 use crate::storage::MutinyStorage;
 
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ChannelMessageEvent {
+    OnConnect {
+        their_node_id: String,
+        inbound: bool,
+        remote_network_address: Option<String>,
+    },
+    OnDisconnect {
+        their_node_id: String,
+    },
+}
+
+#[derive(Clone)]
+pub struct ChannelEventCallback {
+    pub callback: Arc<dyn Fn(ChannelMessageEvent) + Send + Sync>,
+}
+
 pub struct MutinyMessageHandler<S: MutinyStorage> {
     pub liquidity: Option<Arc<LiquidityManager<S>>>,
+    pub channel_event_callback: Option<ChannelEventCallback>,
 }
 
 pub enum MutinyMessage<S: MutinyStorage> {
@@ -76,16 +96,31 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
 
     fn peer_connected(
         &self,
-        _their_node_id: &PublicKey,
-        _msg: &lightning::ln::msgs::Init,
-        _inbound: bool,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::Init,
+        inbound: bool,
     ) -> Result<(), ()> {
-        // ignore
+        if let Some(cb) = self.channel_event_callback.clone() {
+            let event = ChannelMessageEvent::OnConnect {
+                their_node_id: their_node_id.to_string(),
+                inbound,
+                remote_network_address: msg
+                    .remote_network_address
+                    .as_ref()
+                    .map(|addr| format!("{}", addr)),
+            };
+            (cb.callback)(event);
+        }
         Ok(())
     }
 
-    fn peer_disconnected(&self, _their_node_id: &PublicKey) {
-        // ignore
+    fn peer_disconnected(&self, their_node_id: &PublicKey) {
+        if let Some(cb) = self.channel_event_callback.clone() {
+            let event = ChannelMessageEvent::OnDisconnect {
+                their_node_id: their_node_id.to_string(),
+            };
+            (cb.callback)(event);
+        }
     }
 }
 

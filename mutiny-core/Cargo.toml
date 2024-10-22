@@ -4,7 +4,10 @@ cargo-features = ["per-package-target"]
 name = "mutiny-core"
 version = "1.7.13"
 edition = "2021"
-authors = ["Tony Giorgio <tony@mutinywallet.com>", "benthecarman <ben@mutinywallet.com>"]
+authors = [
+  "Tony Giorgio <tony@mutinywallet.com>",
+  "benthecarman <ben@mutinywallet.com>",
+]
 description = "The core SDK for the mutiny node"
 license = "MIT"
 documentation = "https://docs.rs/mutiny-core"
@@ -14,8 +17,16 @@ repository = "https://github.com/mutinywallet/mutiny-node"
 [dependencies]
 cfg-if = "1.0.0"
 bip39 = { version = "2.0.0" }
-bitcoin = { version = "0.32.2", default-features = false, features = ["std", "serde", "secp-recovery", "rand"] }
-bdk_esplora = { version = "=0.18.0", default-features = false, features = ["std", "async-https"] }
+bitcoin = { version = "0.32.2", default-features = false, features = [
+  "std",
+  "serde",
+  "secp-recovery",
+  "rand",
+] }
+bdk_esplora = { version = "=0.18.0", default-features = false, features = [
+  "std",
+  "async-https",
+] }
 bdk_chain = { version = "=0.19.0", features = ["std"] }
 bdk_wallet = { version = "=1.0.0-beta.4", features = ["std"] }
 bdk-macros = "0.6.0"
@@ -24,16 +35,27 @@ itertools = "0.11.0"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 uuid = { version = "1.1.2", features = ["v4"] }
-esplora-client = { version = "0.9", default-features = false, features = ["async"] }
-lightning = { version = "0.0.124", default-features = false, features = ["max_level_trace", "grind_signatures", "std"] }
+esplora-client = { version = "0.9", default-features = false, features = [
+  "async",
+] }
+lightning = { version = "0.0.124", default-features = false, features = [
+  "max_level_trace",
+  "grind_signatures",
+  "std",
+] }
 lightning-invoice = { version = "0.32.0", features = ["serde"] }
 lightning-rapid-gossip-sync = { version = "0.0.124" }
 lightning-background-processor = { version = "0.0.124", features = ["futures"] }
-lightning-transaction-sync = { version = "0.0.124", default-features = false, features = ["esplora-async-https"] }
+lightning-transaction-sync = { version = "0.0.124", default-features = false, features = [
+  "esplora-async-https",
+] }
 lightning-liquidity = "0.1.0-alpha.5"
 chrono = "0.4.22"
 futures-util = { version = "0.3", default-features = false }
-reqwest = { version = "0.11", default-features = false, features = ["multipart", "json"] }
+reqwest = { version = "0.11", default-features = false, features = [
+  "multipart",
+  "json",
+] }
 async-trait = "0.1.68"
 url = { version = "2.3.1", features = ["serde"] }
 cbc = { version = "0.1", features = ["alloc"] }
@@ -69,6 +91,8 @@ gloo-net = { version = "0.4.0" }
 web-time = "1.1"
 gloo-timers = { version = "0.3.0", features = ["futures"] }
 getrandom = { version = "0.2", features = ["js"] }
+web-sys = { version = "0.3.65", features = ["console"] }
+js-sys = "0.3.65"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

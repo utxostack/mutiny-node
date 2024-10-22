@@ -4,7 +4,10 @@ cargo-features = ["per-package-target"]
 name = "mutiny-wasm"
 version = "1.9.8"
 edition = "2021"
-authors = ["Tony Giorgio <tony@mutinywallet.com>", "benthecarman <ben@mutinywallet.com>"]
+authors = [
+  "Tony Giorgio <tony@mutinywallet.com>",
+  "benthecarman <ben@mutinywallet.com>",
+]
 forced-target = "wasm32-unknown-unknown"
 description = "A wasm-bindgen wrapper around mutiny-core"
 license = "MIT"
@@ -22,18 +25,26 @@ anyhow = "1.0"
 async-trait = "0.1.68"
 wasm-bindgen = "0.2.91"
 wasm-bindgen-futures = "0.4.38"
+serde-wasm-bindgen = "0.6"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 base64 = "0.13.1"
-bitcoin = { version = "0.32.2", default-features = false, features = ["std", "serde", "secp-recovery", "rand"] }
-lightning = { version = "0.0.124", default-features = false, features = ["std"] }
+bitcoin = { version = "0.32.2", default-features = false, features = [
+  "std",
+  "serde",
+  "secp-recovery",
+  "rand",
+] }
+lightning = { version = "0.0.124", default-features = false, features = [
+  "std",
+] }
 lightning-invoice = { version = "0.32.0" }
 thiserror = "1.0"
 instant = { version = "0.1", features = ["wasm-bindgen"] }
-log = {version = "0.4.17", features = ["std"]}
+log = { version = "0.4.17", features = ["std"] }
 rexie = "0.5.0"
 gloo-utils = { version = "0.2.0", features = ["serde"] }
-web-sys = { version = "0.3.60", features = ["console"] }
+web-sys = { version = "0.3.60", features = ["console", "BroadcastChannel"] }
 bip39 = { version = "2.0.0" }
 getrandom = { version = "0.2", features = ["js"] }
 futures = "0.3.25"

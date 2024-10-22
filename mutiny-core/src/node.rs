@@ -1,4 +1,5 @@
 use crate::lsp::LspConfig;
+use crate::messagehandler::ChannelEventCallback;
 use crate::nodemanager::ChannelClosure;
 use crate::peermanager::{LspMessageRouter, PeerManager};
 use crate::storage::MutinyStorage;
@@ -197,6 +198,7 @@ pub struct NodeBuilder<S: MutinyStorage> {
     fee_estimator: Option<Arc<MutinyFeeEstimator<S>>>,
     wallet: Option<Arc<OnChainWallet<S>>>,
     esplora: Option<Arc<AsyncClient>>,
+    channel_event_callback: Option<ChannelEventCallback>,
     #[cfg(target_arch = "wasm32")]
     websocket_proxy_addr: Option<String>,
     network: Option<Network>,
@@ -222,6 +224,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             wallet: None,
             esplora: None,
             has_done_initial_sync: None,
+            channel_event_callback: None,
             #[cfg(target_arch = "wasm32")]
             websocket_proxy_addr: None,
             lsp_config: None,
@@ -303,6 +306,10 @@ impl<S: MutinyStorage> NodeBuilder<S> {
 
     pub fn with_lsp_config(&mut self, lsp_config: LspConfig) {
         self.lsp_config = Some(lsp_config);
+    }
+
+    pub fn with_channel_event_callback(&mut self, callback: ChannelEventCallback) {
+        self.channel_event_callback = Some(callback);
     }
 
     pub fn with_logger(&mut self, logger: Arc<MutinyLogger>) {
@@ -567,6 +574,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             onion_message_handler: onion_message_handler.clone(),
             custom_message_handler: Arc::new(MutinyMessageHandler {
                 liquidity: liquidity.clone(),
+                channel_event_callback: self.channel_event_callback.clone(),
             }),
         };
         log_trace!(logger, "finished creating peer manager");

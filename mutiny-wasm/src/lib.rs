@@ -27,6 +27,7 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::{log_info, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
+use mutiny_core::messagehandler::ChannelEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
 use mutiny_core::vss::MutinyVssClient;
@@ -91,9 +92,9 @@ impl MutinyWallet {
         skip_hodl_invoices: Option<bool>,
         nsec_override: Option<String>,
         nip_07_key: Option<String>,
-        primal_url: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
+        channel_event_topic: Option<String>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
         // if both are set throw an error
@@ -109,6 +110,14 @@ impl MutinyWallet {
         } else {
             *init = true;
         }
+
+        let channel_event_callback = channel_event_topic.map(|topic| ChannelEventCallback {
+            callback: Arc::new(move |event| {
+                let channel = web_sys::BroadcastChannel::new(&topic).unwrap();
+                let event = serde_wasm_bindgen::to_value(&event).expect("convert to js");
+                channel.post_message(&event).unwrap();
+            }),
+        });
 
         match Self::new_internal(
             password,
@@ -129,9 +138,9 @@ impl MutinyWallet {
             skip_hodl_invoices,
             nsec_override,
             nip_07_key,
-            primal_url,
             blind_auth_url,
             hermes_url,
+            channel_event_callback,
         )
         .await
         {
@@ -171,9 +180,9 @@ impl MutinyWallet {
         skip_hodl_invoices: Option<bool>,
         _nsec_override: Option<String>,
         _nip_07_key: Option<String>,
-        _primal_url: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
+        channel_event_callback: Option<ChannelEventCallback>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::default());
@@ -255,6 +264,9 @@ impl MutinyWallet {
 
         let mut mw_builder = MutinyWalletBuilder::new(xprivkey, storage).with_config(config);
         mw_builder.with_session_id(logger.session_id.clone());
+        if let Some(cb) = channel_event_callback {
+            mw_builder.with_channel_event_callback(cb);
+        }
         let inner = mw_builder.build().await?;
 
         Ok(MutinyWallet { mnemonic, inner })
