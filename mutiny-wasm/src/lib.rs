@@ -27,7 +27,7 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::{log_info, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
-use mutiny_core::messagehandler::ChannelEventCallback;
+use mutiny_core::messagehandler::PeerEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
 use mutiny_core::vss::MutinyVssClient;
@@ -38,6 +38,7 @@ use mutiny_core::{
     nodemanager::{create_lsp_config, NodeManager},
 };
 use mutiny_core::{logging::MutinyLogger, lsp::LspConfig};
+use web_sys::BroadcastChannel;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -94,7 +95,7 @@ impl MutinyWallet {
         nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
-        channel_event_topic: Option<String>,
+        peer_event_topic: Option<String>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
         // if both are set throw an error
@@ -111,9 +112,20 @@ impl MutinyWallet {
             *init = true;
         }
 
-        let channel_event_callback = channel_event_topic.map(|topic| ChannelEventCallback {
+        let peer_event_callback = peer_event_topic.map(|topic| PeerEventCallback {
             callback: Arc::new(move |event| {
-                let channel = web_sys::BroadcastChannel::new(&topic).unwrap();
+                const KEY: &str = "peer_connection_event_broadcast_channel";
+                let global = web_sys::js_sys::global();
+                let channel: BroadcastChannel =
+                    match web_sys::js_sys::Reflect::get(&global, &(KEY.into())) {
+                        Ok(channel) => channel.dyn_into().unwrap(),
+                        Err(_) => {
+                            let channel = web_sys::BroadcastChannel::new(&topic).unwrap();
+                            web_sys::js_sys::Reflect::set(&global, &(KEY.into()), &channel)
+                                .unwrap();
+                            channel
+                        }
+                    };
                 let event = serde_wasm_bindgen::to_value(&event).expect("convert to js");
                 channel.post_message(&event).unwrap();
             }),
@@ -140,7 +152,7 @@ impl MutinyWallet {
             nip_07_key,
             blind_auth_url,
             hermes_url,
-            channel_event_callback,
+            peer_event_callback,
         )
         .await
         {
@@ -182,7 +194,7 @@ impl MutinyWallet {
         _nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
-        channel_event_callback: Option<ChannelEventCallback>,
+        peer_event_callback: Option<PeerEventCallback>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::default());
@@ -264,8 +276,8 @@ impl MutinyWallet {
 
         let mut mw_builder = MutinyWalletBuilder::new(xprivkey, storage).with_config(config);
         mw_builder.with_session_id(logger.session_id.clone());
-        if let Some(cb) = channel_event_callback {
-            mw_builder.with_channel_event_callback(cb);
+        if let Some(cb) = peer_event_callback {
+            mw_builder.with_peer_event_callback(cb);
         }
         let inner = mw_builder.build().await?;
 
