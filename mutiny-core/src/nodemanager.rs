@@ -2,7 +2,7 @@ use crate::labels::LabelStorage;
 use crate::ldkstorage::CHANNEL_CLOSURE_PREFIX;
 use crate::logging::LOGGING_KEY;
 use crate::lsp::voltage;
-use crate::messagehandler::ChannelEventCallback;
+use crate::messagehandler::PeerEventCallback;
 use crate::peermanager::PeerManager;
 use crate::utils::{sleep, spawn};
 use crate::MutinyInvoice;
@@ -246,7 +246,7 @@ pub struct NodeManagerBuilder<S: MutinyStorage> {
     config: Option<MutinyWalletConfig>,
     stop: Option<Arc<AtomicBool>>,
     logger: Option<Arc<MutinyLogger>>,
-    channel_event_callback: Option<ChannelEventCallback>,
+    peer_event_callback: Option<PeerEventCallback>,
 }
 
 impl<S: MutinyStorage> NodeManagerBuilder<S> {
@@ -258,7 +258,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             config: None,
             stop: None,
             logger: None,
-            channel_event_callback: None,
+            peer_event_callback: None,
         }
     }
 
@@ -275,8 +275,8 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
         self.esplora = Some(esplora);
     }
 
-    pub fn with_channel_event_callback(&mut self, cb: ChannelEventCallback) {
-        self.channel_event_callback = Some(cb);
+    pub fn with_peer_event_callback(&mut self, cb: PeerEventCallback) {
+        self.peer_event_callback = Some(cb);
     }
 
     pub fn with_logger(&mut self, logger: Arc<MutinyLogger>) {
@@ -418,8 +418,8 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
                 if let Some(l) = lsp_config.clone() {
                     node_builder.with_lsp_config(l);
                 }
-                if let Some(cb) = self.channel_event_callback.clone() {
-                    node_builder.with_channel_event_callback(cb);
+                if let Some(cb) = self.peer_event_callback.clone() {
+                    node_builder.with_peer_event_callback(cb);
                 }
                 if c.do_not_connect_peers {
                     node_builder.do_not_connect_peers();
@@ -493,7 +493,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             websocket_proxy_addr,
             user_rgs_url: c.user_rgs_url,
             esplora,
-            channel_event_callback: self.channel_event_callback,
+            peer_event_callback: self.peer_event_callback,
             lsp_config,
             logger,
             do_not_connect_peers: c.do_not_connect_peers,
@@ -520,7 +520,7 @@ pub struct NodeManager<S: MutinyStorage> {
     websocket_proxy_addr: String,
     user_rgs_url: Option<String>,
     esplora: Arc<AsyncClient>,
-    channel_event_callback: Option<ChannelEventCallback>,
+    peer_event_callback: Option<PeerEventCallback>,
     pub(crate) wallet: Arc<OnChainWallet<S>>,
     gossip_sync: Arc<RapidGossipSync>,
     scorer: Arc<utils::Mutex<HubPreferentialScorer>>,
@@ -1963,8 +1963,8 @@ pub(crate) async fn create_new_node_from_node_manager<S: MutinyStorage>(
     if let Some(l) = node_manager.lsp_config.clone() {
         node_builder.with_lsp_config(l);
     }
-    if let Some(cb) = node_manager.channel_event_callback.clone() {
-        node_builder.with_channel_event_callback(cb);
+    if let Some(cb) = node_manager.peer_event_callback.clone() {
+        node_builder.with_peer_event_callback(cb);
     }
     if node_manager.do_not_connect_peers {
         node_builder.do_not_connect_peers();

@@ -14,7 +14,7 @@ use crate::storage::MutinyStorage;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum ChannelMessageEvent {
+pub enum PeerConnectionEvent {
     OnConnect {
         their_node_id: String,
         inbound: bool,
@@ -26,13 +26,13 @@ pub enum ChannelMessageEvent {
 }
 
 #[derive(Clone)]
-pub struct ChannelEventCallback {
-    pub callback: Arc<dyn Fn(ChannelMessageEvent) + Send + Sync>,
+pub struct PeerEventCallback {
+    pub callback: Arc<dyn Fn(PeerConnectionEvent) + Send + Sync>,
 }
 
 pub struct MutinyMessageHandler<S: MutinyStorage> {
     pub liquidity: Option<Arc<LiquidityManager<S>>>,
-    pub channel_event_callback: Option<ChannelEventCallback>,
+    pub peer_event_callback: Option<PeerEventCallback>,
 }
 
 pub enum MutinyMessage<S: MutinyStorage> {
@@ -100,8 +100,8 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
         msg: &lightning::ln::msgs::Init,
         inbound: bool,
     ) -> Result<(), ()> {
-        if let Some(cb) = self.channel_event_callback.clone() {
-            let event = ChannelMessageEvent::OnConnect {
+        if let Some(cb) = self.peer_event_callback.clone() {
+            let event = PeerConnectionEvent::OnConnect {
                 their_node_id: their_node_id.to_string(),
                 inbound,
                 remote_network_address: msg
@@ -115,8 +115,8 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
     }
 
     fn peer_disconnected(&self, their_node_id: &PublicKey) {
-        if let Some(cb) = self.channel_event_callback.clone() {
-            let event = ChannelMessageEvent::OnDisconnect {
+        if let Some(cb) = self.peer_event_callback.clone() {
+            let event = PeerConnectionEvent::OnDisconnect {
                 their_node_id: their_node_id.to_string(),
             };
             (cb.callback)(event);
