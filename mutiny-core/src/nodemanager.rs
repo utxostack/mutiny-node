@@ -1651,12 +1651,15 @@ impl<S: MutinyStorage> NodeManager<S> {
     /// This should only be used if the channel will never actually be opened.
     ///
     /// If both force and abandon are true, an error will be returned.
+    ///
+    /// ldk uses background fee rate for closing channels which can be very slow
     pub async fn close_channel(
         &self,
         outpoint: &OutPoint,
         address: Option<Address>,
         force: bool,
         abandon: bool,
+        target_feerate_sats_per_1000_weight: Option<u32>,
     ) -> Result<(), MutinyError> {
         log_trace!(self.logger, "calling close_channel");
 
@@ -1716,15 +1719,11 @@ impl<S: MutinyStorage> NodeManager<S> {
                         None
                     };
 
-                    // ldk uses background fee rate for closing channels which can be very slow
-                    // so we use normal fee rate instead
-                    let fee_rate = self.wallet.fees.get_normal_fee_rate();
-
                     node.channel_manager
                         .close_channel_with_feerate_and_script(
                             &channel.channel_id,
                             &channel.counterparty.node_id,
-                            Some(fee_rate),
+                            target_feerate_sats_per_1000_weight,
                             shutdown_script,
                         )
                         .map_err(|e| {
