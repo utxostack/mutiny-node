@@ -840,6 +840,9 @@ impl MutinyWallet {
     ///
     /// If both force and abandon are true, an error will be returned.
     /// The address must match the network and the network: "bitcoin", "testnet", "signet", "regtest"
+    ///
+    /// if leave target_feerate_sats_per_1000_weight to none, the node will determine a target
+    /// feerate base on current network status
     #[wasm_bindgen]
     pub async fn close_channel(
         &self,
@@ -848,6 +851,7 @@ impl MutinyWallet {
         force: bool,
         abandon: bool,
         network: Option<String>,
+        target_feerate_sats_per_1000_weight: Option<u32>,
     ) -> Result<(), MutinyJsError> {
         let outpoint: OutPoint =
             OutPoint::from_str(&outpoint).map_err(|_| MutinyJsError::InvalidArgumentsError)?;
@@ -866,7 +870,13 @@ impl MutinyWallet {
         Ok(self
             .inner
             .node_manager
-            .close_channel(&outpoint, address, force, abandon)
+            .close_channel(
+                &outpoint,
+                address,
+                force,
+                abandon,
+                target_feerate_sats_per_1000_weight,
+            )
             .await?)
     }
 
