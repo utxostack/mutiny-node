@@ -651,7 +651,15 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             builder.finish()?
         };
         log_debug!(self.logger, "Unsigned PSBT: {psbt}");
-        let finalized = wallet.sign(&mut psbt, SignOptions::default())?;
+        let finalized = wallet.sign(
+            &mut psbt,
+            SignOptions {
+                trust_witness_utxo: true,
+                try_finalize: true,
+                allow_all_sighashes: true,
+                ..Default::default()
+            },
+        )?;
         log_debug!(self.logger, "finalized: {finalized}");
         Ok(psbt)
     }
