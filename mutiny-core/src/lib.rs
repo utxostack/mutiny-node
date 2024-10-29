@@ -2283,6 +2283,7 @@ mod tests {
             node_id: None,
             reason: "".to_string(),
             timestamp: 1686258926,
+            channel_funding_txo: None,
         };
         let closure_chan_id: u128 = 6969;
         node.persister

@@ -369,6 +369,7 @@ pub struct ChannelClosure {
     node_id: Option<String>,
     reason: String,
     pub timestamp: u64,
+    channel_funding_txo: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -406,13 +407,27 @@ impl Ord for ChannelClosure {
     }
 }
 
+struct ByteBuf<'a>(&'a [u8]);
+
+impl<'a> std::fmt::LowerHex for ByteBuf<'a> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for byte in self.0 {
+            fmt.write_fmt(format_args!("{:02x}", byte))?;
+        }
+        Ok(())
+    }
+}
+
 impl From<nodemanager::ChannelClosure> for ChannelClosure {
     fn from(c: nodemanager::ChannelClosure) -> Self {
         ChannelClosure {
-            channel_id: c.channel_id.map(|c| c.to_lower_hex_string()),
+            channel_id: c
+                .channel_id
+                .map(|channel_id| format!("{:x}", ByteBuf(&channel_id))),
             node_id: c.node_id.map(|c| c.serialize().to_lower_hex_string()),
             reason: c.reason,
             timestamp: c.timestamp,
+            channel_funding_txo: c.channel_funding_txo.map(|txo| format!("{}", txo)),
         }
     }
 }

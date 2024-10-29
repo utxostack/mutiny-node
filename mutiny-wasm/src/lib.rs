@@ -775,7 +775,14 @@ impl MutinyWallet {
     pub async fn list_channel_closures(
         &self,
     ) -> Result<JsValue /* Vec<ChannelClosure> */, MutinyJsError> {
-        let mut channel_closures = self.inner.node_manager.list_channel_closures().await?;
+        let mut channel_closures: Vec<ChannelClosure> = self
+            .inner
+            .node_manager
+            .list_channel_closures()
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect();
         channel_closures.sort();
         Ok(JsValue::from_serde(&channel_closures)?)
     }

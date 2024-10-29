@@ -185,18 +185,24 @@ pub struct ChannelClosure {
     pub node_id: Option<PublicKey>,
     pub reason: String,
     pub timestamp: u64,
+    #[serde(default)]
+    pub channel_funding_txo: Option<OutPoint>,
 }
 
 impl ChannelClosure {
     pub fn new(
         user_channel_id: u128,
         channel_id: ChannelId,
+        channel_funding_txo: Option<lightning::chain::transaction::OutPoint>,
         node_id: Option<PublicKey>,
         reason: ClosureReason,
     ) -> Self {
+        let channel_funding_txo =
+            channel_funding_txo.map(|txo| OutPoint::new(txo.txid, txo.index.into()));
         Self {
             user_channel_id: Some(user_channel_id.to_be_bytes()),
             channel_id: Some(channel_id.0),
+            channel_funding_txo,
             node_id,
             reason: reason.to_string(),
             timestamp: utils::now().as_secs(),
@@ -2342,6 +2348,7 @@ mod tests {
             node_id: None,
             reason: "".to_string(),
             timestamp: 1686258926,
+            channel_funding_txo: None,
         };
 
         let tx1: TransactionDetails = TransactionDetails {
