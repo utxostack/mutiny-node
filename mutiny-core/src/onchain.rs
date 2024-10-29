@@ -78,7 +78,8 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                     .descriptor(
                         KeychainKind::Internal,
                         Some(change_descriptor_template.clone()),
-                    ),
+                    )
+                    .extract_keys(),
             )
         });
         let wallet = match load_wallet_res {
