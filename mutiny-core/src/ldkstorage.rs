@@ -847,6 +847,7 @@ mod test {
             node_id: None,
             reason: "This is a test.".to_string(),
             timestamp: utils::now().as_secs(),
+            channel_funding_txo: None,
         };
         let result = persister.persist_channel_closure(user_channel_id, closure.clone());
         assert!(result.is_ok());

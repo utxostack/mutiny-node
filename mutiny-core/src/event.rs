@@ -555,6 +555,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                 user_channel_id,
                 counterparty_node_id: node_id,
                 channel_capacity_sats,
+                channel_funding_txo,
                 ..
             } => {
                 // if we still have channel open params, then it was just a failed channel open
@@ -585,7 +586,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                     reason
                 );
 
-                let closure = ChannelClosure::new(user_channel_id, channel_id, node_id, reason);
+                let closure = ChannelClosure::new(
+                    user_channel_id,
+                    channel_id,
+                    channel_funding_txo,
+                    node_id,
+                    reason,
+                );
                 if let Err(e) = self
                     .persister
                     .persist_channel_closure(user_channel_id, closure)
