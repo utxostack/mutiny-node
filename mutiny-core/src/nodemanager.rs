@@ -678,6 +678,10 @@ impl<S: MutinyStorage> NodeManager<S> {
             self.set_address_labels(address.clone(), labels)?;
             log_trace!(self.logger, "finished calling get_new_address");
 
+            if let Some(changeset) = wallet.take_staged() {
+                self.storage.write_changes(&changeset)?;
+            }
+
             return Ok(address);
         }
 
