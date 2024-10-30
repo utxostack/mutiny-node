@@ -170,6 +170,8 @@ pub enum MutinyJsError {
     /// Mint URL in token was empty
     #[error("Mint URL in token is empty")]
     EmptyMintURLError,
+    #[error("Encrypt or decrypt failed")]
+    EncryptOrDecryptError,
     /// Token already spent.
     #[error("Token has been already spent.")]
     TokenAlreadySpent,

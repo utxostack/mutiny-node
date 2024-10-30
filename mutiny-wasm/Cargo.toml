@@ -2,7 +2,7 @@ cargo-features = ["per-package-target"]
 
 [package]
 name = "mutiny-wasm"
-version = "1.9.8"
+version = "1.10.4"
 edition = "2021"
 authors = [
   "Tony Giorgio <tony@mutinywallet.com>",

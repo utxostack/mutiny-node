@@ -27,12 +27,16 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::{log_info, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
+use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::messagehandler::PeerEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
 use mutiny_core::vss::MutinyVssClient;
 use mutiny_core::MutinyWalletBuilder;
-use mutiny_core::{encrypt::encryption_key_from_pass, InvoiceHandler, MutinyWalletConfigBuilder};
+use mutiny_core::{
+    encrypt::{encrypt, encryption_key_from_pass},
+    InvoiceHandler, MutinyWalletConfigBuilder,
+};
 use mutiny_core::{
     labels::LabelStorage,
     nodemanager::{create_lsp_config, NodeManager},
@@ -1090,6 +1094,20 @@ impl MutinyWallet {
     pub async fn is_potential_hodl_invoice(invoice: String) -> Result<bool, MutinyJsError> {
         let invoice = Bolt11Invoice::from_str(&invoice)?;
         Ok(mutiny_core::utils::is_hodl_invoice(&invoice))
+    }
+
+    /// Encrypt mnemonic with password
+    #[wasm_bindgen]
+    pub fn encrypt_mnemonic(mnemonic: String, password: String) -> Result<String, MutinyJsError> {
+        let cipher = encryption_key_from_pass(&password).unwrap();
+        encrypt(&mnemonic, cipher).map_err(|_| MutinyJsError::EncryptOrDecryptError)
+    }
+
+    /// Decrypt mnemonic with password
+    #[wasm_bindgen]
+    pub fn decrypt_mnemonic(encrypted: String, password: String) -> Result<String, MutinyJsError> {
+        decrypt_with_password(&encrypted, &password)
+            .map_err(|_| MutinyJsError::EncryptOrDecryptError)
     }
 }
 
