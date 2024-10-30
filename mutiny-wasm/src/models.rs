@@ -393,6 +393,11 @@ impl ChannelClosure {
     pub fn reason(&self) -> String {
         self.reason.clone()
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn channel_funding_txo(&self) -> Option<String> {
+        self.channel_funding_txo.clone()
+    }
 }
 
 impl PartialOrd for ChannelClosure {
