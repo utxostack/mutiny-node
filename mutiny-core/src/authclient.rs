@@ -132,10 +132,16 @@ impl MutinyAuthClient {
             })?;
 
         if response.status().is_success() {
-            let jwt = response
+            let response_text = response
                 .text()
                 .await
                 .map_err(|_| MutinyError::JwtAuthFailure)?;
+
+            let jwt: String = serde_json::from_str::<Value>(&response_text)
+                .map_err(|_| MutinyError::JwtAuthFailure)?
+                .get("token")
+                .and_then(|token| token.as_str().map(String::from))
+                .ok_or(MutinyError::JwtAuthFailure)?;
 
             // basic validation to make sure it is a valid string
             let _ = UntrustedToken::new(&jwt).map_err(|e| {
@@ -205,8 +211,11 @@ mod tests {
                 "application/json",
             ))
             .map(|| {
+                let token_response = json!({
+                    "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.tyh-VfuzIxCyGYDlkBA7DfyjrqmSHu6pQ2hoZuFqUSLPNY2N0mpHb3nk5K17HWP_3cYHBw7AhHale5wky6-sVA"
+                });
                 warp::reply::with_status(
-                    "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.tyh-VfuzIxCyGYDlkBA7DfyjrqmSHu6pQ2hoZuFqUSLPNY2N0mpHb3nk5K17HWP_3cYHBw7AhHale5wky6-sVA",
+                    warp::reply::json(&token_response),
                     warp::http::StatusCode::OK,
                 )
             });
