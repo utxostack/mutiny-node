@@ -38,18 +38,19 @@ pub mod vss;
 #[cfg(test)]
 mod test_utils;
 
+use crate::authmanager::AuthManager;
 use crate::error::MutinyError;
 pub use crate::gossip::{GOSSIP_SYNC_TIME_KEY, NETWORK_GRAPH_KEY, PROB_SCORER_KEY};
 pub use crate::keymanager::generate_seed;
 pub use crate::ldkstorage::{
     CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY, MONITORS_PREFIX_KEY,
 };
-use crate::logging::MutinyLogger;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 use crate::storage::get_invoice_by_hash;
 use crate::utils::sleep;
 use crate::utils::spawn;
+use crate::{authclient::MutinyAuthClient, logging::MutinyLogger};
 use crate::{
     event::{HTLCStatus, MillisatAmount, PaymentInfo},
     onchain::FULL_SYNC_STOP_GAP,
@@ -529,6 +530,7 @@ pub struct MutinyWalletConfigBuilder {
     lsp_url: Option<String>,
     lsp_connection_string: Option<String>,
     lsp_token: Option<String>,
+    auth_client: Option<Arc<MutinyAuthClient>>,
     subscription_url: Option<String>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
@@ -551,6 +553,7 @@ impl MutinyWalletConfigBuilder {
             lsp_url: None,
             lsp_connection_string: None,
             lsp_token: None,
+            auth_client: None,
             subscription_url: None,
             blind_auth_url: None,
             hermes_url: None,
@@ -591,6 +594,10 @@ impl MutinyWalletConfigBuilder {
 
     pub fn with_lsp_token(&mut self, lsp_token: String) {
         self.lsp_token = Some(lsp_token);
+    }
+
+    pub fn with_auth_client(&mut self, auth_client: Arc<MutinyAuthClient>) {
+        self.auth_client = Some(auth_client);
     }
 
     pub fn with_subscription_url(&mut self, subscription_url: String) {
@@ -639,6 +646,7 @@ impl MutinyWalletConfigBuilder {
             lsp_url: self.lsp_url,
             lsp_connection_string: self.lsp_connection_string,
             lsp_token: self.lsp_token,
+            auth_client: self.auth_client,
             subscription_url: self.subscription_url,
             blind_auth_url: self.blind_auth_url,
             hermes_url: self.hermes_url,
@@ -662,6 +670,7 @@ pub struct MutinyWalletConfig {
     lsp_url: Option<String>,
     lsp_connection_string: Option<String>,
     lsp_token: Option<String>,
+    auth_client: Option<Arc<MutinyAuthClient>>,
     subscription_url: Option<String>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
@@ -678,6 +687,7 @@ pub struct MutinyWalletBuilder<S: MutinyStorage> {
     config: Option<MutinyWalletConfig>,
     session_id: Option<String>,
     network: Option<Network>,
+    auth_client: Option<Arc<MutinyAuthClient>>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
     ln_event_callback: Option<CommonLnEventCallback>,
@@ -698,6 +708,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             config: None,
             session_id: None,
             network: None,
+            auth_client: None,
             subscription_url: None,
             blind_auth_url: None,
             hermes_url: None,
@@ -718,6 +729,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         self.skip_hodl_invoices = config.skip_hodl_invoices;
         self.skip_device_lock = config.skip_device_lock;
         self.safe_mode = config.safe_mode;
+        self.auth_client = config.auth_client.clone();
         self.subscription_url = config.subscription_url.clone();
         self.blind_auth_url = config.blind_auth_url.clone();
         self.hermes_url = config.hermes_url.clone();
@@ -735,6 +747,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
     pub fn with_network(&mut self, network: Network) {
         self.network = Some(network);
+    }
+
+    pub fn with_auth_client(&mut self, auth_client: Arc<MutinyAuthClient>) {
+        self.auth_client = Some(auth_client);
     }
 
     pub fn with_subscription_url(&mut self, subscription_url: String) {
@@ -904,6 +920,15 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
         let start = Instant::now();
 
+        // auth manager, take from auth_client if it already exists
+        log_trace!(logger, "creating auth manager");
+        let auth = if let Some(auth_client) = self.auth_client.clone() {
+            auth_client.auth.clone()
+        } else {
+            AuthManager::new(self.xprivkey)?
+        };
+        log_trace!(logger, "finished creating auth manager");
+
         // populate the activity index
         log_trace!(logger, "populating activity index");
         let mut activity_index = node_manager
@@ -995,6 +1020,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             config,
             storage: self.storage,
             node_manager: Some(node_manager),
+            auth,
             logger: logger.clone(),
             network,
             skip_hodl_invoices: self.skip_hodl_invoices,
@@ -1053,6 +1079,7 @@ pub struct MutinyWallet<S: MutinyStorage> {
     config: MutinyWalletConfig,
     pub(crate) storage: S,
     pub node_manager: Option<Arc<NodeManager<S>>>,
+    pub auth: AuthManager,
     pub logger: Arc<MutinyLogger>,
     network: Network,
     skip_hodl_invoices: bool,
