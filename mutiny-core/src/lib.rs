@@ -9,6 +9,8 @@
 )]
 extern crate core;
 
+pub mod authclient;
+pub mod authmanager;
 mod chain;
 pub mod encrypt;
 pub mod error;

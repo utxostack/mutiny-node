@@ -184,6 +184,8 @@ pub enum MutinyJsError {
     InvalidPsbt,
     #[error("Invalid hex")]
     InvalidHex,
+    #[error("JWT Auth Failure")]
+    JwtAuthFailure,
     /// Unknown error.
     #[error("Unknown Error")]
     UnknownError,
@@ -249,6 +251,7 @@ impl From<MutinyError> for MutinyJsError {
             MutinyError::InvalidFeerate => MutinyJsError::InvalidFeerate,
             MutinyError::InvalidPsbt => MutinyJsError::InvalidPsbt,
             MutinyError::InvalidHex => MutinyJsError::InvalidHex,
+            MutinyError::JwtAuthFailure => MutinyJsError::JwtAuthFailure,
         }
     }
 }

@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-// pub fn create_manager() -> AuthManager {
-//     let mnemonic = generate_seed(12).unwrap();
-//     let seed = mnemonic.to_seed("");
-//     let xprivkey = Xpriv::new_master(Network::Regtest, &seed).unwrap();
-//     AuthManager::new(xprivkey).unwrap()
-// }
+pub fn create_manager() -> AuthManager {
+    let mnemonic = generate_seed(12).unwrap();
+    let seed = mnemonic.to_seed("");
+    let xprivkey = Xpriv::new_master(Network::Regtest, &seed).unwrap();
+    AuthManager::new(xprivkey).unwrap()
+}
 
 // pub async fn create_vss_client() -> MutinyVssClient {
 //     // Set up test auth client
@@ -186,7 +186,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::generate_seed;
 use crate::node::{NetworkGraph, Node, RapidGossipSync};
 use crate::nodemanager::NodeIndex;
 use crate::onchain::{get_esplora_url, OnChainWallet};
@@ -194,6 +193,7 @@ use crate::scorer::{HubPreferentialScorer, ProbScorer};
 use crate::storage::MutinyStorage;
 use crate::utils::{now, Mutex};
 use crate::MutinyWallet;
+use crate::{authmanager::AuthManager, generate_seed};
 use crate::{chain::MutinyChain, MutinyWalletBuilder};
 use crate::{fees::MutinyFeeEstimator, MutinyWalletConfigBuilder};
 use crate::{logging::MutinyLogger, node::NodeBuilder};

@@ -173,6 +173,9 @@ pub enum MutinyError {
     InvalidPsbt,
     #[error("Invalid hex")]
     InvalidHex,
+    /// Failed to authenticate using JWT
+    #[error("Failed to authenticate using JWT.")]
+    JwtAuthFailure,
     #[error(transparent)]
     Other(anyhow::Error),
 }
