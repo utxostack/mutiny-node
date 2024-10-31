@@ -242,7 +242,7 @@ pub struct NodeBalance {
     pub confirmed: u64,
     pub unconfirmed: u64,
     pub lightning: u64,
-    pub force_close: u64,
+    pub closing: u64,
 }
 
 pub struct NodeManagerBuilder<S: MutinyStorage> {
@@ -992,8 +992,8 @@ impl<S: MutinyStorage> NodeManager<S> {
             .map(|b| b.claimable_amount_satoshis())
             .sum::<u64>();
 
-        // get the amount in limbo from force closes
-        let force_close: u64 = nodes
+        // get the amount closing
+        let closing: u64 = nodes
             .iter()
             .flat_map(|(_, n)| {
                 let channels = n.channel_manager.list_channels();
@@ -1008,8 +1008,8 @@ impl<S: MutinyStorage> NodeManager<S> {
         Ok(NodeBalance {
             confirmed: (onchain.confirmed + onchain.trusted_pending).to_sat(),
             unconfirmed: (onchain.untrusted_pending + onchain.immature).to_sat(),
-            lightning: lightning_sats.saturating_sub(force_close),
-            force_close,
+            lightning: lightning_sats.saturating_sub(closing),
+            closing,
         })
     }
 
