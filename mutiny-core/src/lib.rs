@@ -133,7 +133,7 @@ pub struct MutinyBalance {
     pub confirmed: u64,
     pub unconfirmed: u64,
     pub lightning: u64,
-    pub force_close: u64,
+    pub closing: u64,
 }
 
 impl MutinyBalance {
@@ -142,7 +142,7 @@ impl MutinyBalance {
             confirmed: ln_balance.confirmed,
             unconfirmed: ln_balance.unconfirmed,
             lightning: ln_balance.lightning,
-            force_close: ln_balance.force_close,
+            closing: ln_balance.closing,
         }
     }
 }
