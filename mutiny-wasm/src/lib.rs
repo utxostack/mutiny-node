@@ -858,9 +858,9 @@ impl MutinyWallet {
     pub async fn close_channel(
         &self,
         outpoint: String,
-        address: String,
         force: bool,
         abandon: bool,
+        address: Option<String>,
         network: Option<String>,
         target_feerate_sats_per_1000_weight: Option<u32>,
     ) -> Result<(), MutinyJsError> {
@@ -872,12 +872,16 @@ impl MutinyWallet {
         } else {
             Network::Bitcoin
         };
-        let address =
-            Address::from_str(&address).map_err(|_| MutinyJsError::InvalidAddressNetworkError)?;
-        let address = address
-            .require_network(network)
-            .map_err(|_| MutinyJsError::InvalidAddressNetworkError)
-            .ok();
+        let address = if let Some(addr) = address {
+            let addr_ = Address::from_str(&addr)
+                .map_err(|_| MutinyJsError::InvalidAddressNetworkError)?
+                .require_network(network)
+                .map_err(|_| MutinyJsError::InvalidAddressNetworkError)?;
+            Some(addr_)
+        } else {
+            None
+        };
+
         Ok(self
             .inner
             .node_manager
