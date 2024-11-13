@@ -936,9 +936,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             xprivkey: self.xprivkey,
             config,
             storage: self.storage,
-            node_manager,
-            // esplora,
-            stop,
+            node_manager: Some(node_manager),
             logger: logger.clone(),
             network,
             skip_hodl_invoices: self.skip_hodl_invoices,
@@ -954,9 +952,20 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
         // if we don't have any nodes, create one
         log_trace!(logger, "listing nodes");
-        if mw.node_manager.list_nodes().await?.is_empty() {
+        let nm = mw
+            .node_manager
+            .as_ref()
+            .ok_or(MutinyError::NotRunning)?
+            .clone();
+        if mw
+            .node_manager
+            .as_ref()
+            .unwrap()
+            .list_nodes()
+            .await?
+            .is_empty()
+        {
             log_trace!(logger, "going to create first node");
-            let nm = mw.node_manager.clone();
             // spawn in background, this can take a while and we don't want to block
             utils::spawn(async move {
                 if let Err(e) = nm.new_node().await {
@@ -984,9 +993,7 @@ pub struct MutinyWallet<S: MutinyStorage> {
     xprivkey: Xpriv,
     config: MutinyWalletConfig,
     pub(crate) storage: S,
-    pub node_manager: Arc<NodeManager<S>>,
-    // esplora: Arc<AsyncClient>,
-    pub stop: Arc<AtomicBool>,
+    pub node_manager: Option<Arc<NodeManager<S>>>,
     pub logger: Arc<MutinyLogger>,
     network: Network,
     skip_hodl_invoices: bool,
@@ -999,6 +1006,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     /// Not needed after [NodeManager]'s `new()` function.
     pub async fn start(&mut self) -> Result<(), MutinyError> {
         log_trace!(self.logger, "calling start");
+        if self.node_manager.is_some() {
+            return Err(MutinyError::AlreadyRunning);
+        }
 
         self.storage.start().await?;
 
@@ -1007,8 +1017,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         nm_builder.with_logger(self.logger.clone());
 
         // when we restart, gen a new session id
-        self.node_manager = Arc::new(nm_builder.build().await?);
-        NodeManager::start_sync(self.node_manager.clone());
+        let node_manager = Arc::new(nm_builder.build().await?);
+        self.node_manager.replace(node_manager.clone());
+        NodeManager::start_sync(node_manager.clone());
 
         log_trace!(self.logger, "finished calling start");
         Ok(())
@@ -1026,6 +1037,8 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<MutinyInvoice, MutinyError> {
         log_trace!(self.logger, "calling pay_invoice");
 
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
         if inv.network() != self.network {
             return Err(MutinyError::IncorrectNetwork);
         }
@@ -1035,20 +1048,13 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             return Err(MutinyError::InvoiceExpired);
         }
 
-        // Check the amount specified in the invoice, we need one to make the payment
-        let _send_msat = inv
-            .amount_milli_satoshis()
-            .or(amt_sats.map(|x| x * 1_000))
-            .ok_or(MutinyError::InvoiceInvalid)?;
-
         // set labels now, need to set it before in case the payment times out
         self.storage
             .set_invoice_labels(inv.clone(), labels.clone())?;
 
         // If any balance at all, then fallback to node manager for payment.
         // Take the error from the node manager as the priority.
-        let res = if self
-            .node_manager
+        let res = if node_manager
             .nodes
             .read()
             .await
@@ -1062,8 +1068,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             .sum::<u64>()
             > 0
         {
-            let res = self
-                .node_manager
+            let res = node_manager
                 .pay_invoice(None, inv, amt_sats, labels)
                 .await?;
 
@@ -1171,12 +1176,13 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<Txid, MutinyError> {
         log_trace!(self.logger, "calling send_to_address");
 
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
         // If any balance at all, then fallback to node manager for payment.
         // Take the error from the node manager as the priority.
-        let b = self.node_manager.get_balance().await?;
+        let b = node_manager.get_balance().await?;
         let res = if b.confirmed + b.unconfirmed > 0 {
-            let res = self
-                .node_manager
+            let res = node_manager
                 .send_to_address(send_to, amount, labels, fee_rate)
                 .await?;
             Ok(res)
@@ -1198,15 +1204,15 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<u64, MutinyError> {
         log_trace!(self.logger, "calling estimate_tx_fee");
 
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
         if amount < DUST_LIMIT {
             return Err(MutinyError::WalletOperationFailed);
         }
 
-        let b = self.node_manager.get_balance().await?;
+        let b = node_manager.get_balance().await?;
         let res = if b.confirmed + b.unconfirmed > 0 {
-            let res = self
-                .node_manager
-                .estimate_tx_fee(destination_address, amount, fee_rate)?;
+            let res = node_manager.estimate_tx_fee(destination_address, amount, fee_rate)?;
 
             Ok(res)
         } else {
@@ -1229,10 +1235,11 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<Txid, MutinyError> {
         log_trace!(self.logger, "calling sweep_wallet");
 
-        let b = self.node_manager.get_balance().await?;
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let b = node_manager.get_balance().await?;
         let res = if b.confirmed + b.unconfirmed > 0 {
-            let res = self
-                .node_manager
+            let res = node_manager
                 .sweep_wallet(send_to.clone(), labels, fee_rate)
                 .await?;
 
@@ -1252,8 +1259,10 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<bitcoin::Address, MutinyError> {
         log_trace!(self.logger, "calling create_address");
 
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
         // Fallback to node_manager address creation
-        let Ok(addr) = self.node_manager.get_new_address(labels.clone()) else {
+        let Ok(addr) = node_manager.get_new_address(labels.clone()) else {
             return Err(MutinyError::WalletOperationFailed);
         };
 
@@ -1269,8 +1278,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<MutinyInvoice, MutinyError> {
         log_trace!(self.logger, "calling create_lightning_invoice");
 
-        let (inv, _fee) = self
-            .node_manager
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let (inv, _fee) = node_manager
             .create_invoice(amount, labels, expiry_delta_secs)
             .await?;
 
@@ -1285,7 +1295,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     pub async fn get_balance(&self) -> Result<MutinyBalance, MutinyError> {
         log_trace!(self.logger, "calling get_balance");
 
-        let ln_balance = self.node_manager.get_balance().await?;
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let ln_balance = node_manager.get_balance().await?;
 
         Ok(MutinyBalance::new(ln_balance))
     }
@@ -1382,7 +1394,10 @@ impl<S: MutinyStorage> MutinyWallet<S> {
                 // convert keys to txid
                 let txid_str = item.key.trim_start_matches(ONCHAIN_PREFIX);
                 let txid: Txid = Txid::from_str(txid_str)?;
-                if let Some(tx_details) = self.node_manager.get_transaction(txid)? {
+                let Some(node_manager) = self.node_manager.as_ref() else {
+                    continue;
+                };
+                if let Some(tx_details) = node_manager.get_transaction(txid)? {
                     // make sure it is a relevant transaction
                     if tx_details.sent != 0 || tx_details.received != 0 {
                         activities.push(ActivityItem::OnChain(tx_details));
@@ -1410,17 +1425,20 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     pub fn get_transaction(&self, txid: Txid) -> Result<Option<TransactionDetails>, MutinyError> {
         log_trace!(self.logger, "calling get_transaction");
 
-        // check our local cache/state for fedimint first
-        let res = match get_transaction_details(&self.storage, txid, &self.logger) {
-            Some(t) => Ok(Some(t)),
-            None => {
-                // fall back to node manager
-                self.node_manager.get_transaction(txid)
-            }
-        };
-        log_trace!(self.logger, "finished calling get_transaction");
+        // check our local cache/state first
+        if let Some(t) = get_transaction_details(&self.storage, txid, &self.logger) {
+            log_trace!(self.logger, "finished calling get_transaction");
+            return Ok(Some(t));
+        }
 
-        res
+        if let Some(node_manager) = self.node_manager.as_ref() {
+            log_trace!(self.logger, "finished calling get_transaction");
+            // fall back to node manager
+            return node_manager.get_transaction(txid);
+        }
+
+        log_trace!(self.logger, "finished calling get_transaction");
+        Ok(None)
     }
 
     /// Returns all the lightning activity for a given label
@@ -1430,7 +1448,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     ) -> Result<Vec<ActivityItem>, MutinyError> {
         log_trace!(self.logger, "calling get_label_activity");
 
-        let Some(label_item) = self.node_manager.get_label(label)? else {
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let Some(label_item) = node_manager.get_label(label)? else {
             return Ok(Vec::new());
         };
 
@@ -1542,12 +1562,12 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
     /// Stops all of the nodes and background processes.
     /// Returns after node has been stopped.
-    pub async fn stop(&self) -> Result<(), MutinyError> {
+    pub async fn stop(&mut self) -> Result<(), MutinyError> {
         log_trace!(self.logger, "calling stop");
 
-        self.stop.store(true, Ordering::Relaxed);
+        let node_manager = self.node_manager.take().ok_or(MutinyError::NotRunning)?;
 
-        self.node_manager.stop().await?;
+        node_manager.stop().await?;
 
         // stop the indexeddb object to close db connection
         if self.storage.connected().unwrap_or(false) {
@@ -1580,7 +1600,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
         self.stop().await?;
 
-        self.storage.start().await?;
+        self.start().await?;
 
         self.storage.change_password_and_rewrite_storage(
             old.filter(|s| !s.is_empty()),
@@ -1603,7 +1623,9 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     pub async fn reset_onchain_tracker(&mut self) -> Result<(), MutinyError> {
         log_trace!(self.logger, "calling reset_onchain_tracker");
 
-        self.node_manager.reset_onchain_tracker().await?;
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        node_manager.reset_onchain_tracker().await?;
         // sleep for 250ms to give time for the storage to write
         utils::sleep(250).await;
 
@@ -1614,10 +1636,8 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
         self.start().await?;
 
-        self.node_manager
-            .wallet
-            .full_sync(FULL_SYNC_STOP_GAP)
-            .await?;
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+        node_manager.wallet.full_sync(FULL_SYNC_STOP_GAP).await?;
 
         log_trace!(self.logger, "finished calling reset_onchain_tracker");
         Ok(())
@@ -1626,6 +1646,11 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     /// Deletes all the storage
     pub async fn delete_all(&self) -> Result<(), MutinyError> {
         log_trace!(self.logger, "calling delete_all");
+        if self.node_manager.is_some() {
+            return Err(MutinyError::AlreadyRunning);
+        }
+
+        self.storage.stop();
 
         self.storage.delete_all().await?;
         log_trace!(self.logger, "finished calling delete_all");
@@ -1812,7 +1837,12 @@ impl<S: MutinyStorage> InvoiceHandler for MutinyWallet<S> {
     }
 
     async fn get_best_block(&self) -> Result<BestBlock, MutinyError> {
-        let node = self.node_manager.get_node_by_key_or_first(None).await?;
+        let node = self
+            .node_manager
+            .as_ref()
+            .ok_or(MutinyError::NotRunning)?
+            .get_node_by_key_or_first(None)
+            .await?;
         Ok(node.channel_manager.current_best_block())
     }
 
@@ -1842,186 +1872,10 @@ impl<S: MutinyStorage> InvoiceHandler for MutinyWallet<S> {
     }
 }
 
-//     esplora: Arc<AsyncClient>,
-//     stop: Arc<AtomicBool>,
-
-//             esplora.clone(),
-//             c.network,
-//             stop.clone(),
-//             logger.clone(),
-//             safe_mode,
-//         )
-
-//         esplora,
-//         network,
-//         stop.clone(),
-//         logger.clone(),
-//         safe_mode,
-//     )
-
 #[derive(Deserialize, Clone, Copy, Debug)]
 struct BitcoinPriceResponse {
     pub price: f32,
 }
-
-// // max amount that can be spent through a gateway
-// fn max_spendable_amount(current_balance_sat: u64, routing_fees: &GatewayFees) -> Option<u64> {
-//     let current_balance_msat = current_balance_sat as f64 * 1_000.0;
-
-//     // proportional fee on the current balance
-//     let base_and_prop_fee_msat = calc_routing_fee_msat(current_balance_msat, routing_fees);
-
-//     // The max balance considering the maximum possible proportional fee.
-//     // This gives us a baseline to start checking the fees from. In the case that the fee is 1%
-//     // The real maximum balance will be somewhere between our current balance and 99% of our
-//     // balance.
-//     let initial_max = current_balance_msat - base_and_prop_fee_msat;
-
-//     // if the fee would make the amount go negative, then there is not a possible amount to spend
-//     if initial_max <= 0.0 {
-//         return None;
-//     }
-
-//     // if the initial balance and initial maximum is basically the same, then that's it
-//     // this is basically only ever the case if there's not really any fee involved
-//     if current_balance_msat - initial_max < 1.0 {
-//         return Some((initial_max / 1_000.0).floor() as u64);
-//     }
-
-//     // keep trying until we hit our balance or find the max amount
-//     let mut new_max = initial_max;
-//     while new_max < current_balance_msat {
-//         // we increment by one and check the fees for it
-//         let new_check = new_max + 1.0;
-
-//         // check the new spendable balance amount plus base fees plus new proportional fee
-//         let new_amt = new_check + calc_routing_fee_msat(new_check, routing_fees);
-//         if current_balance_msat - new_amt <= 0.0 {
-//             // since we are incrementing from a minimum spendable amount,
-//             // if we overshot our total balance then the last max is the highest
-//             return Some((new_max / 1_000.0).floor() as u64);
-//         }
-
-//         // this is the new spendable maximum
-//         new_max += 1.0;
-//     }
-
-//     Some((new_max / 1_000.0).floor() as u64)
-// }
-
-// fn calc_routing_fee_msat(amt_msat: f64, routing_fees: &GatewayFees) -> f64 {
-//     let prop_fee_msat = (amt_msat * routing_fees.proportional_millionths as f64) / 1_000_000.0;
-//     routing_fees.base_msat as f64 + prop_fee_msat
-// }
-
-// #[cfg(test)]
-// fn max_routing_fee_amount() {
-//     let initial_budget = 1;
-//     let routing_fees = GatewayFees {
-//         base_msat: 10_000,
-//         proportional_millionths: 0,
-//     };
-//     assert_eq!(None, max_spendable_amount(initial_budget, &routing_fees));
-
-//     // only a percentage fee
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 0,
-//         proportional_millionths: 0,
-//     };
-//     assert_eq!(
-//         Some(100),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 0,
-//         proportional_millionths: 10_000,
-//     };
-//     assert_eq!(
-//         Some(99),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 0,
-//         proportional_millionths: 100_000,
-//     };
-//     assert_eq!(
-//         Some(90),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 101_000;
-//     let routing_fees = GatewayFees {
-//         base_msat: 0,
-//         proportional_millionths: 100_000,
-//     };
-//     assert_eq!(
-//         Some(91_818),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 101;
-//     let routing_fees = GatewayFees {
-//         base_msat: 0,
-//         proportional_millionths: 100_000,
-//     };
-//     assert_eq!(
-//         Some(91),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     // same tests but with a base fee
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 1_000,
-//         proportional_millionths: 0,
-//     };
-//     assert_eq!(
-//         Some(99),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 1_000,
-//         proportional_millionths: 10_000,
-//     };
-//     assert_eq!(
-//         Some(98),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 100;
-//     let routing_fees = GatewayFees {
-//         base_msat: 1_000,
-//         proportional_millionths: 100_000,
-//     };
-//     assert_eq!(
-//         Some(89),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-
-//     let initial_budget = 101;
-//     let routing_fees = GatewayFees {
-//         base_msat: 1_000,
-//         proportional_millionths: 100_000,
-//     };
-//     assert_eq!(
-//         Some(90),
-//         max_spendable_amount(initial_budget, &routing_fees)
-//     );
-// }
-
-// #[cfg(test)]
-// #[cfg(not(target_arch = "wasm32"))]
-// mod tests {
-//     use super::*;
-
-// }
 
 #[cfg(test)]
 #[cfg(target_arch = "wasm32")]
@@ -2104,11 +1958,11 @@ mod tests {
             .await
             .expect("mutiny wallet should initialize");
 
-        let first_seed = mw.node_manager.xprivkey;
+        let first_seed = mw.node_manager.as_ref().unwrap().xprivkey;
 
         assert!(mw.stop().await.is_ok());
         assert!(mw.start().await.is_ok());
-        assert_eq!(first_seed, mw.node_manager.xprivkey);
+        assert_eq!(first_seed, mw.node_manager.as_ref().unwrap().xprivkey);
     }
 
     #[test]
@@ -2136,17 +1990,44 @@ mod tests {
         // let storage persist
         sleep(1000).await;
 
-        assert_eq!(mw.node_manager.list_nodes().await.unwrap().len(), 1);
+        assert_eq!(
+            mw.node_manager
+                .as_ref()
+                .unwrap()
+                .list_nodes()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
 
-        assert!(mw.node_manager.new_node().await.is_ok());
+        assert!(mw.node_manager.as_ref().unwrap().new_node().await.is_ok());
         // let storage persist
         sleep(1000).await;
 
-        assert_eq!(mw.node_manager.list_nodes().await.unwrap().len(), 2);
+        assert_eq!(
+            mw.node_manager
+                .as_ref()
+                .unwrap()
+                .list_nodes()
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
 
         assert!(mw.stop().await.is_ok());
         assert!(mw.start().await.is_ok());
-        assert_eq!(mw.node_manager.list_nodes().await.unwrap().len(), 2);
+        assert_eq!(
+            mw.node_manager
+                .as_ref()
+                .unwrap()
+                .list_nodes()
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -2169,7 +2050,7 @@ mod tests {
             .build()
             .await
             .expect("mutiny wallet should initialize");
-        let seed = mw.node_manager.xprivkey;
+        let seed = mw.node_manager.as_ref().unwrap().xprivkey;
         assert!(!seed.private_key.secret_bytes().is_empty());
 
         // create a second mw and make sure it has a different seed
@@ -2181,12 +2062,12 @@ mod tests {
         let config2 = MutinyWalletConfigBuilder::new(xpriv2)
             .with_network(network)
             .build();
-        let mw2 = MutinyWalletBuilder::new(xpriv2, storage2.clone())
+        let mut mw2 = MutinyWalletBuilder::new(xpriv2, storage2.clone())
             .with_config(config2)
             .build()
             .await
             .expect("mutiny wallet should initialize");
-        let seed2 = mw2.node_manager.xprivkey;
+        let seed2 = mw2.node_manager.as_ref().unwrap().xprivkey;
         assert_ne!(seed, seed2);
 
         // now restore the first seed into the 2nd mutiny node
@@ -2211,7 +2092,7 @@ mod tests {
             .build()
             .await
             .expect("mutiny wallet should initialize");
-        let restored_seed = mw3.node_manager.xprivkey;
+        let restored_seed = mw3.node_manager.as_ref().unwrap().xprivkey;
         assert_eq!(seed, restored_seed);
     }
 
@@ -2242,7 +2123,7 @@ mod tests {
         let bip21 = mw.create_bip21(None, vec![]).await.unwrap();
         assert!(bip21.invoice.is_none());
 
-        let new_node = mw.node_manager.new_node().await;
+        let new_node = mw.node_manager.as_ref().unwrap().new_node().await;
         assert!(new_node.is_err());
     }
 
@@ -2265,7 +2146,15 @@ mod tests {
             .expect("mutiny wallet should initialize");
 
         loop {
-            if !mw.node_manager.list_nodes().await.unwrap().is_empty() {
+            if !mw
+                .node_manager
+                .as_ref()
+                .unwrap()
+                .list_nodes()
+                .await
+                .unwrap()
+                .is_empty()
+            {
                 break;
             }
             sleep(100).await;
@@ -2273,6 +2162,8 @@ mod tests {
 
         let node = mw
             .node_manager
+            .as_ref()
+            .unwrap()
             .get_node_by_key_or_first(None)
             .await
             .unwrap();
@@ -2290,7 +2181,12 @@ mod tests {
             .persist_channel_closure(closure_chan_id, closure.clone())
             .unwrap();
 
-        let address = mw.node_manager.get_new_address(vec![]).unwrap();
+        let address = mw
+            .node_manager
+            .as_ref()
+            .unwrap()
+            .get_new_address(vec![])
+            .unwrap();
         let output = TxOut {
             value: Amount::from_sat(10_000),
             script_pubkey: address.script_pubkey(),
@@ -2302,6 +2198,8 @@ mod tests {
             output: vec![output.clone()],
         };
         mw.node_manager
+            .as_ref()
+            .unwrap()
             .wallet
             .insert_tx(
                 tx1.clone(),
@@ -2318,6 +2216,8 @@ mod tests {
             output: vec![output],
         };
         mw.node_manager
+            .as_ref()
+            .unwrap()
             .wallet
             .insert_tx(
                 tx2.clone(),
