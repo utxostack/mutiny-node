@@ -28,6 +28,7 @@ use lightning::{log_info, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
 use mutiny_core::encrypt::decrypt_with_password;
+use mutiny_core::error::MutinyError;
 use mutiny_core::messagehandler::PeerEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
@@ -286,6 +287,15 @@ impl MutinyWallet {
         Ok(MutinyWallet { mnemonic, inner })
     }
 
+    fn get_node_manager(&self) -> Result<&NodeManager<IndexedDbStorage>, MutinyJsError> {
+        let node_manager = self
+            .inner
+            .node_manager
+            .as_ref()
+            .ok_or(MutinyError::NotRunning)?;
+        Ok(node_manager)
+    }
+
     pub fn is_safe_mode(&self) -> bool {
         self.inner.is_safe_mode()
     }
@@ -345,7 +355,7 @@ impl MutinyWallet {
     /// Stops all of the nodes and background processes.
     /// Returns after node has been stopped.
     #[wasm_bindgen]
-    pub async fn stop(&self) -> Result<(), MutinyJsError> {
+    pub async fn stop(&mut self) -> Result<(), MutinyJsError> {
         // Ok(self.inner.node_manager.stop().await?)
         Ok(self.inner.stop().await?)
     }
@@ -477,8 +487,7 @@ impl MutinyWallet {
         fee_rate: Option<u64>,
     ) -> Result<u64, MutinyJsError> {
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .estimate_channel_open_fee(amount, fee_rate)?)
     }
 
@@ -489,8 +498,7 @@ impl MutinyWallet {
         fee_rate: Option<u64>,
     ) -> Result<u64, MutinyJsError> {
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .estimate_sweep_channel_open_fee(fee_rate)?)
     }
 
@@ -518,7 +526,7 @@ impl MutinyWallet {
     /// the new given fee rate in sats/vbyte
     pub async fn bump_fee(&self, txid: String, fee_rate: u64) -> Result<String, MutinyJsError> {
         let txid = Txid::from_str(&txid)?;
-        let result = self.inner.node_manager.bump_fee(txid, fee_rate).await?;
+        let result = self.get_node_manager()?.bump_fee(txid, fee_rate).await?;
 
         Ok(result.to_string())
     }
@@ -534,7 +542,7 @@ impl MutinyWallet {
     ) -> Result<JsValue /* Option<TransactionDetails> */, MutinyJsError> {
         let address = Address::from_str(&address)?;
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.check_address(address).await?,
+            &self.get_node_manager()?.check_address(address).await?,
         )?)
     }
 
@@ -560,41 +568,43 @@ impl MutinyWallet {
     /// Lists all the UTXOs in the wallet.
     #[wasm_bindgen]
     pub fn list_utxos(&self) -> Result<JsValue, MutinyJsError> {
-        Ok(JsValue::from_serde(&self.inner.node_manager.list_utxos()?)?)
+        Ok(JsValue::from_serde(
+            &self.get_node_manager()?.list_utxos()?,
+        )?)
     }
 
     /// Gets a fee estimate for an low priority transaction.
     /// Value is in sat/vbyte.
     #[wasm_bindgen]
-    pub fn estimate_fee_low(&self) -> u32 {
-        self.inner.node_manager.estimate_fee_low()
+    pub fn estimate_fee_low(&self) -> Result<u32, MutinyJsError> {
+        Ok(self.get_node_manager()?.estimate_fee_low())
     }
 
     /// Gets a fee estimate for an average priority transaction.
     /// Value is in sat/vbyte.
     #[wasm_bindgen]
-    pub fn estimate_fee_normal(&self) -> u32 {
-        self.inner.node_manager.estimate_fee_normal()
+    pub fn estimate_fee_normal(&self) -> Result<u32, MutinyJsError> {
+        Ok(self.get_node_manager()?.estimate_fee_normal())
     }
 
     /// Gets a fee estimate for an high priority transaction.
     /// Value is in sat/vbyte.
     #[wasm_bindgen]
-    pub fn estimate_fee_high(&self) -> u32 {
-        self.inner.node_manager.estimate_fee_high()
+    pub fn estimate_fee_high(&self) -> Result<u32, MutinyJsError> {
+        Ok(self.get_node_manager()?.estimate_fee_high())
     }
 
     /// Creates a new lightning node and adds it to the manager.
     #[wasm_bindgen]
     pub async fn new_node(&self) -> Result<NodeIdentity, MutinyJsError> {
-        Ok(self.inner.node_manager.new_node().await?.into())
+        Ok(self.get_node_manager()?.new_node().await?.into())
     }
 
     /// Lists the pubkeys of the lightning node in the manager.
     #[wasm_bindgen]
     pub async fn list_nodes(&self) -> Result<JsValue /* Vec<String> */, MutinyJsError> {
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.list_nodes().await?,
+            &self.get_node_manager()?.list_nodes().await?,
         )?)
     }
 
@@ -610,13 +620,13 @@ impl MutinyWallet {
     ) -> Result<(), MutinyJsError> {
         let lsp_config = create_lsp_config(lsp_url, lsp_connection_string, lsp_token)?;
 
-        self.inner.node_manager.change_lsp(lsp_config).await?;
+        self.get_node_manager()?.change_lsp(lsp_config).await?;
         Ok(())
     }
 
     /// Returns the current LSP config
     pub async fn get_configured_lsp(&self) -> Result<JsValue, MutinyJsError> {
-        match self.inner.node_manager.get_configured_lsp().await? {
+        match self.get_node_manager()?.get_configured_lsp().await? {
             Some(LspConfig::VoltageFlow(config)) => Ok(JsValue::from_serde(&config)?),
             Some(LspConfig::Lsps(config)) => Ok(JsValue::from_serde(&config)?),
             None => Ok(JsValue::NULL),
@@ -631,8 +641,7 @@ impl MutinyWallet {
         label: Option<String>,
     ) -> Result<(), MutinyJsError> {
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .connect_to_peer(None, &connection_string, label)
             .await?)
     }
@@ -641,7 +650,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     pub async fn disconnect_peer(&self, peer: String) -> Result<(), MutinyJsError> {
         let peer = PublicKey::from_str(&peer)?;
-        Ok(self.inner.node_manager.disconnect_peer(None, peer).await?)
+        Ok(self.get_node_manager()?.disconnect_peer(None, peer).await?)
     }
 
     /// Deletes a peer from the selected node.
@@ -650,7 +659,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     pub async fn delete_peer(&self, peer: String) -> Result<(), MutinyJsError> {
         let peer = NodeId::from_str(&peer).map_err(|_| MutinyJsError::InvalidArgumentsError)?;
-        Ok(self.inner.node_manager.delete_peer(None, &peer).await?)
+        Ok(self.get_node_manager()?.delete_peer(None, &peer).await?)
     }
 
     /// Sets the label of a peer from the selected node.
@@ -658,7 +667,7 @@ impl MutinyWallet {
     pub fn label_peer(&self, node_id: String, label: Option<String>) -> Result<(), MutinyJsError> {
         let node_id =
             NodeId::from_str(&node_id).map_err(|_| MutinyJsError::InvalidArgumentsError)?;
-        self.inner.node_manager.label_peer(&node_id, label)?;
+        self.get_node_manager()?.label_peer(&node_id, label)?;
         Ok(())
     }
 
@@ -712,8 +721,7 @@ impl MutinyWallet {
     ) -> Result<MutinyInvoice, MutinyJsError> {
         let to_node = PublicKey::from_str(&to_node)?;
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .keysend(None, to_node, amt_sats, message, labels)
             .await?
             .into())
@@ -765,8 +773,7 @@ impl MutinyWallet {
     ) -> Result<ChannelClosure, MutinyJsError> {
         let user_channel_id: [u8; 16] = FromHex::from_hex(&user_channel_id)?;
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .get_channel_closure(u128::from_be_bytes(user_channel_id))
             .await?
             .into())
@@ -780,8 +787,7 @@ impl MutinyWallet {
         &self,
     ) -> Result<JsValue /* Vec<ChannelClosure> */, MutinyJsError> {
         let mut channel_closures: Vec<ChannelClosure> = self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .list_channel_closures()
             .await?
             .into_iter()
@@ -811,8 +817,7 @@ impl MutinyWallet {
         };
 
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .open_channel(None, to_pubkey, amount, fee_rate, None)
             .await?
             .into())
@@ -834,8 +839,7 @@ impl MutinyWallet {
         };
 
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .sweep_all_to_channel(to_pubkey)
             .await?
             .into())
@@ -883,8 +887,7 @@ impl MutinyWallet {
         };
 
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .close_channel(
                 &outpoint,
                 address,
@@ -899,7 +902,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     pub async fn list_channels(&self) -> Result<JsValue /* Vec<MutinyChannel> */, MutinyJsError> {
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.list_channels().await?,
+            &self.get_node_manager()?.list_channels().await?,
         )?)
     }
 
@@ -907,7 +910,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     pub async fn list_peers(&self) -> Result<JsValue /* Vec<MutinyPeer> */, MutinyJsError> {
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.list_peers().await?,
+            &self.get_node_manager()?.list_peers().await?,
         )?)
     }
 
@@ -928,7 +931,7 @@ impl MutinyWallet {
         &self,
     ) -> Result<JsValue /* Map<Address, Vec<String>> */, MutinyJsError> {
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.get_address_labels()?,
+            &self.get_node_manager()?.get_address_labels()?,
         )?)
     }
 
@@ -942,8 +945,7 @@ impl MutinyWallet {
     ) -> Result<(), MutinyJsError> {
         let address = Address::from_str(&address)?.assume_checked();
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .set_address_labels(address, labels)?)
     }
 
@@ -951,7 +953,7 @@ impl MutinyWallet {
         &self,
     ) -> Result<JsValue /* Map<Invoice, Vec<String>> */, MutinyJsError> {
         Ok(JsValue::from_serde(
-            &self.inner.node_manager.get_invoice_labels()?,
+            &self.get_node_manager()?.get_invoice_labels()?,
         )?)
     }
 
@@ -965,8 +967,7 @@ impl MutinyWallet {
     ) -> Result<(), MutinyJsError> {
         let invoice = Bolt11Invoice::from_str(&invoice)?;
         Ok(self
-            .inner
-            .node_manager
+            .get_node_manager()?
             .set_invoice_labels(invoice, labels)?)
     }
 
@@ -986,7 +987,7 @@ impl MutinyWallet {
     /// Resets the scorer and network graph. This can be useful if you get stuck in a bad state.
     #[wasm_bindgen]
     pub async fn reset_router(&self) -> Result<(), MutinyJsError> {
-        self.inner.node_manager.reset_router().await?;
+        self.get_node_manager()?.reset_router().await?;
         // Sleep to wait for indexed db to finish writing
         sleep(500).await;
         Ok(())
@@ -1379,7 +1380,7 @@ mod tests {
             .await
             .expect("failed to clear storage");
 
-        let nm = MutinyWallet::new(
+        let mut nm = MutinyWallet::new(
             password.clone(),
             Some(seed.to_string()),
             None,
