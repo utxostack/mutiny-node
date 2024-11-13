@@ -81,14 +81,15 @@ use lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription};
 
 use messagehandler::PeerEventCallback;
 use serde::{Deserialize, Serialize};
+use utils::{spawn_with_handle, StopHandle};
 
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{collections::HashMap, sync::atomic::AtomicBool};
-use std::{str::FromStr, sync::atomic::Ordering};
 
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
@@ -763,9 +764,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 .set_data(EXPECTED_NETWORK_KEY.to_string(), self.network, None)?,
         }
 
-        let stop = Arc::new(AtomicBool::new(false));
         let logger = Arc::new(MutinyLogger::with_writer(
-            stop.clone(),
             self.storage.clone(),
             self.session_id,
         ));
@@ -791,10 +790,9 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         log_trace!(logger, "spawning claim device lock");
         let storage_clone = self.storage.clone();
         let logger_clone = logger.clone();
-        let stop_clone = stop.clone();
-        spawn(async move {
+        let device_lock_stop_handle = spawn_with_handle(|stop_signal| async move {
             loop {
-                if stop_clone.load(Ordering::Relaxed) {
+                if stop_signal.stopping() {
                     log_debug!(logger_clone, "stopping claim device lock");
                     if let Err(e) = storage_clone.release_device_lock(&logger_clone).await {
                         log_error!(logger_clone, "Error releasing device lock: {e}");
@@ -942,6 +940,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             skip_hodl_invoices: self.skip_hodl_invoices,
             safe_mode: self.safe_mode,
             bitcoin_price_cache: Arc::new(Mutex::new(price_cache)),
+            device_lock_stop_handle,
         };
         log_trace!(logger, "finished creating mutiny wallet");
         // if we are in safe mode, don't create any nodes or
@@ -999,6 +998,7 @@ pub struct MutinyWallet<S: MutinyStorage> {
     skip_hodl_invoices: bool,
     safe_mode: bool,
     bitcoin_price_cache: Arc<Mutex<HashMap<String, (f32, Duration)>>>,
+    device_lock_stop_handle: StopHandle,
 }
 
 impl<S: MutinyStorage> MutinyWallet<S> {
@@ -1568,6 +1568,12 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         let node_manager = self.node_manager.take().ok_or(MutinyError::NotRunning)?;
 
         node_manager.stop().await?;
+
+        // stop device lock
+        self.device_lock_stop_handle.stop().await;
+
+        // stop logger
+        self.logger.stop().await;
 
         // stop the indexeddb object to close db connection
         if self.storage.connected().unwrap_or(false) {
