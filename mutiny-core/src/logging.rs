@@ -1,11 +1,8 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
-use crate::storage::MutinyStorage;
 use crate::utils::Mutex;
 use crate::{error::MutinyError, utils, utils::sleep};
+use crate::{storage::MutinyStorage, utils::StopHandle};
 use chrono::Utc;
 use hex_conservative::DisplayHex;
 use lightning::util::logger::{Level, Logger, Record};
@@ -20,51 +17,48 @@ pub struct MutinyLogger {
     pub session_id: String,
     should_write_to_storage: bool,
     memory_logs: Arc<Mutex<Vec<String>>>,
+    stop_handle: Option<StopHandle>,
 }
 
 impl MutinyLogger {
-    pub fn with_writer<S: MutinyStorage>(
-        stop: Arc<AtomicBool>,
-        logging_db: S,
-        session_id: Option<String>,
-    ) -> Self {
-        let l = MutinyLogger {
-            session_id: session_id.unwrap_or_else(gen_session_id),
-            should_write_to_storage: true,
-            memory_logs: Arc::new(Mutex::new(vec![])),
-        };
+    pub fn with_writer<S: MutinyStorage>(logging_db: S, session_id: Option<String>) -> Self {
+        let memory_logs = Arc::new(Mutex::new(vec![]));
 
-        let log_copy = l.clone();
-        utils::spawn(async move {
-            loop {
-                // wait up to 5s, checking graceful shutdown check each 1s.
-                for _ in 0..5 {
-                    if stop.load(Ordering::Relaxed) {
-                        logging_db.stop();
-                        return;
-                    }
-                    sleep(1_000).await;
-                }
+        let stop_handle = utils::spawn_with_handle({
+            let memory_logs = memory_logs.clone();
+            |stop_signal| {
+                async move {
+                    loop {
+                        // wait up to 5s, checking graceful shutdown check each 1s.
+                        for _ in 0..5 {
+                            if stop_signal.stopping() {
+                                logging_db.stop();
+                                return;
+                            }
+                            sleep(1_000).await;
+                        }
 
-                // if there's any in memory logs, append them to the file system
-                let memory_logs_clone = {
-                    if let Ok(mut memory_logs) = log_copy.memory_logs.lock() {
-                        let logs = memory_logs.clone();
-                        memory_logs.clear();
-                        Some(logs)
-                    } else {
-                        warn!("Failed to lock memory_logs, log entries may be lost.");
-                        None
-                    }
-                };
+                        // if there's any in memory logs, append them to the file system
+                        let memory_logs_clone = {
+                            if let Ok(mut memory_logs) = memory_logs.lock() {
+                                let logs = memory_logs.clone();
+                                memory_logs.clear();
+                                Some(logs)
+                            } else {
+                                warn!("Failed to lock memory_logs, log entries may be lost.");
+                                None
+                            }
+                        };
 
-                if let Some(logs) = memory_logs_clone {
-                    if !logs.is_empty() {
-                        // append them to storage
-                        match write_logging_data(&logging_db, logs).await {
-                            Ok(_) => {}
-                            Err(_) => {
-                                error!("could not write logging data to storage, trying again next time, log entries may be lost");
+                        if let Some(logs) = memory_logs_clone {
+                            if !logs.is_empty() {
+                                // append them to storage
+                                match write_logging_data(&logging_db, logs).await {
+                                    Ok(_) => {}
+                                    Err(_) => {
+                                        error!("could not write logging data to storage, trying again next time, log entries may be lost");
+                                    }
+                                }
                             }
                         }
                     }
@@ -72,7 +66,12 @@ impl MutinyLogger {
             }
         });
 
-        l
+        MutinyLogger {
+            session_id: session_id.unwrap_or_else(gen_session_id),
+            should_write_to_storage: true,
+            memory_logs,
+            stop_handle: Some(stop_handle),
+        }
     }
 
     pub(crate) fn get_logs<S: MutinyStorage>(
@@ -84,6 +83,12 @@ impl MutinyLogger {
         }
         get_logging_data(storage)
     }
+
+    pub(crate) async fn stop(&self) {
+        if let Some(stop_handle) = self.stop_handle.as_ref() {
+            stop_handle.stop().await
+        }
+    }
 }
 
 impl Default for MutinyLogger {
@@ -92,6 +97,7 @@ impl Default for MutinyLogger {
             session_id: gen_session_id(),
             should_write_to_storage: Default::default(),
             memory_logs: Arc::new(Mutex::new(vec![])),
+            stop_handle: None,
         }
     }
 }
@@ -192,11 +198,6 @@ impl Logger for TestLogger {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    };
-
     use lightning::{log_debug, util::logger::Logger};
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
@@ -230,8 +231,7 @@ mod tests {
 
         let storage = MemoryStorage::default();
 
-        let stop = Arc::new(AtomicBool::new(false));
-        let logger = MutinyLogger::with_writer(stop.clone(), storage.clone(), None);
+        let logger = MutinyLogger::with_writer(storage.clone(), None);
 
         let log_str = "testing logging with storage";
         log_debug!(logger, "{}", log_str);
@@ -247,6 +247,6 @@ mod tests {
             .unwrap()
             .contains(log_str));
 
-        stop.swap(true, Ordering::Relaxed);
+        logger.stop().await;
     }
 }

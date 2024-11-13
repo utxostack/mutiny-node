@@ -14,6 +14,8 @@ use lightning::util::ser::Writeable;
 use lightning::util::ser::Writer;
 use lightning_invoice::Bolt11Invoice;
 use reqwest::Client;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 pub const FETCH_TIMEOUT: i32 = 30_000;
 
@@ -167,6 +169,56 @@ impl<'a, S: Writeable> Writeable for MutexGuard<'a, S> {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), lightning::io::Error> {
         S::write(&**self, writer)
     }
+}
+
+/// Stop signal
+pub struct StopSignal(Arc<AtomicBool>);
+
+impl StopSignal {
+    /// check stop signal
+    pub fn stopping(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+/// Stop handle
+#[derive(Clone)]
+pub struct StopHandle {
+    stopping: Arc<AtomicBool>,
+    stopped: Arc<AtomicBool>,
+}
+
+impl StopHandle {
+    pub async fn stop(&self) {
+        // signal stop
+        self.stopping
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        // wait stopped
+        while !self.stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            sleep(200).await;
+        }
+    }
+}
+
+pub fn spawn_with_handle<
+    F: FnOnce(StopSignal) -> Fut + 'static,
+    Fut: future::Future<Output = ()> + 'static,
+>(
+    f: F,
+) -> StopHandle {
+    let stopping = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::new(AtomicBool::new(false));
+
+    let fut = f(StopSignal(stopping.clone()));
+    spawn({
+        let stopped = stopped.clone();
+        async move {
+            fut.await;
+            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+
+    StopHandle { stopping, stopped }
 }
 
 #[cfg(target_arch = "wasm32")]
