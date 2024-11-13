@@ -200,6 +200,7 @@ impl StopHandle {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 pub fn spawn_with_handle<
     F: FnOnce(StopSignal) -> Fut + 'static,
     Fut: future::Future<Output = ()> + 'static,
@@ -227,6 +228,28 @@ where
     F: future::Future<Output = ()> + 'static,
 {
     wasm_bindgen_futures::spawn_local(future);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn spawn_with_handle<
+    F: FnOnce(StopSignal) -> Fut + Send + 'static,
+    Fut: future::Future<Output = ()> + Send + 'static,
+>(
+    f: F,
+) -> StopHandle {
+    let stopping = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::new(AtomicBool::new(false));
+
+    let fut = f(StopSignal(stopping.clone()));
+    spawn({
+        let stopped = stopped.clone();
+        async move {
+            fut.await;
+            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+
+    StopHandle { stopping, stopped }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
