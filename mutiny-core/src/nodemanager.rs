@@ -4,7 +4,7 @@ use crate::logging::LOGGING_KEY;
 use crate::lsp::voltage;
 use crate::messagehandler::PeerEventCallback;
 use crate::peermanager::PeerManager;
-use crate::utils::{sleep, spawn};
+use crate::utils::sleep;
 use crate::MutinyInvoice;
 use crate::MutinyWalletConfig;
 use crate::TransactionDetails;
@@ -461,15 +461,12 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             let version = node_storage.version + 1;
             let storage = self.storage.clone();
             let logger_clone = logger.clone();
-            spawn(async move {
+            {
                 let start = Instant::now();
-                if let Err(e) = storage
-                    .insert_nodes(&NodeStorage {
-                        nodes: updated_nodes,
-                        version,
-                    })
-                    .await
-                {
+                if let Err(e) = storage.insert_nodes(&NodeStorage {
+                    nodes: updated_nodes,
+                    version,
+                }) {
                     log_error!(logger_clone, "Failed to insert updated nodes: {e}");
                 } else {
                     log_info!(
@@ -478,7 +475,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
                         start.elapsed().as_millis()
                     );
                 }
-            });
+            };
 
             Arc::new(RwLock::new(nodes_map))
         };
@@ -1336,7 +1333,7 @@ impl<S: MutinyStorage> NodeManager<S> {
         node_storage.version += 1; // update version for VSS
 
         // save updated lsp to storage
-        self.storage.insert_nodes(&node_storage).await?;
+        self.storage.insert_nodes(&node_storage)?;
         log_trace!(self.logger, "finished calling change_lsp");
 
         Ok(())
@@ -1880,7 +1877,7 @@ impl<S: MutinyStorage> NodeManager<S> {
 
         // shut back down after reading if it was already closed
         if needs_db_connection {
-            self.storage.clone().stop();
+            self.storage.clone().stop().await;
         }
 
         log_trace!(self.logger, "finished calling reset_router");
@@ -1902,11 +1899,11 @@ impl<S: MutinyStorage> NodeManager<S> {
         // delete the bdk keychain store
         self.storage.delete(&[KEYCHAIN_STORE_KEY])?;
         self.storage
-            .set_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
+            .write_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
 
         // shut back down after reading if it was already closed
         if needs_db_connection {
-            self.storage.clone().stop();
+            self.storage.clone().stop().await;
         }
 
         log_trace!(self.logger, "finished calling reset_onchain_tracker");
@@ -1934,7 +1931,7 @@ impl<S: MutinyStorage> NodeManager<S> {
 
         // shut back down after reading if it was already closed
         if needs_db_connection {
-            storage.clone().stop();
+            storage.clone().stop().await;
         }
 
         Ok(Value::Object(serde_map))
@@ -2005,7 +2002,7 @@ pub(crate) async fn create_new_node_from_node_manager<S: MutinyStorage>(
     existing_nodes
         .nodes
         .insert(next_node_uuid.clone(), next_node);
-    node_manager.storage.insert_nodes(&existing_nodes).await?;
+    node_manager.storage.insert_nodes(&existing_nodes)?;
     node_mutex.nodes = existing_nodes.nodes.clone();
 
     let mut nodes = node_manager.nodes.write().await;

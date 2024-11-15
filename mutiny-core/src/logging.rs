@@ -32,7 +32,7 @@ impl MutinyLogger {
                         // wait up to 5s, checking graceful shutdown check each 1s.
                         for _ in 0..5 {
                             if stop_signal.stopping() {
-                                logging_db.stop();
+                                logging_db.stop().await;
                                 return;
                             }
                             sleep(1_000).await;
@@ -53,7 +53,7 @@ impl MutinyLogger {
                         if let Some(logs) = memory_logs_clone {
                             if !logs.is_empty() {
                                 // append them to storage
-                                match write_logging_data(&logging_db, logs).await {
+                                match write_logging_data(&logging_db, logs) {
                                     Ok(_) => {}
                                     Err(_) => {
                                         error!("could not write logging data to storage, trying again next time, log entries may be lost");
@@ -149,7 +149,7 @@ fn get_logging_data<S: MutinyStorage>(storage: &S) -> Result<Option<Vec<String>>
     storage.get_data(LOGGING_KEY)
 }
 
-async fn write_logging_data<S: MutinyStorage>(
+fn write_logging_data<S: MutinyStorage>(
     storage: &S,
     mut recent_logs: Vec<String>,
 ) -> Result<(), MutinyError> {
@@ -164,7 +164,7 @@ async fn write_logging_data<S: MutinyStorage>(
     }
 
     // Save the logs
-    storage.set_data(LOGGING_KEY.to_string(), &existing_logs, None)?;
+    storage.write_data(LOGGING_KEY.to_string(), &existing_logs, None)?;
 
     Ok(())
 }

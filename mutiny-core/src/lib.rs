@@ -759,9 +759,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     return Err(MutinyError::NetworkMismatch);
                 }
             }
-            None => self
-                .storage
-                .set_data(EXPECTED_NETWORK_KEY.to_string(), self.network, None)?,
+            None => {
+                self.storage
+                    .write_data(EXPECTED_NETWORK_KEY.to_string(), self.network, None)?
+            }
         }
 
         let logger = Arc::new(MutinyLogger::with_writer(
@@ -777,7 +778,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "Current device lock: {lock:?}");
             }
-            self.storage.set_device_lock(&logger).await?;
+            self.storage.set_device_lock(&logger)?;
             log_trace!(
                 logger,
                 "Device lock set: took {}ms",
@@ -794,12 +795,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             loop {
                 if stop_signal.stopping() {
                     log_debug!(logger_clone, "stopping claim device lock");
-                    if let Err(e) = storage_clone.release_device_lock(&logger_clone).await {
+                    if let Err(e) = storage_clone.release_device_lock(&logger_clone) {
                         log_error!(logger_clone, "Error releasing device lock: {e}");
                     }
                     break;
                 }
-                if let Err(e) = storage_clone.set_device_lock(&logger_clone).await {
+                if let Err(e) = storage_clone.set_device_lock(&logger_clone) {
                     log_error!(logger_clone, "Error setting device lock: {e}");
                 }
                 sleep((DEVICE_LOCK_INTERVAL_SECS * 1_000) as i32).await;
@@ -1578,7 +1579,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         // stop the indexeddb object to close db connection
         if self.storage.connected().unwrap_or(false) {
             log_debug!(self.logger, "stopping storage");
-            self.storage.stop();
+            self.storage.stop().await;
             log_debug!(self.logger, "stopped storage");
         }
 
@@ -1656,7 +1657,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             return Err(MutinyError::AlreadyRunning);
         }
 
-        self.storage.stop();
+        self.storage.stop().await;
 
         self.storage.delete_all().await?;
         log_trace!(self.logger, "finished calling delete_all");
@@ -1672,13 +1673,13 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         // Delete our storage but insert some device specific data
         let device_id = storage.get_device_id()?;
         let logs: Option<Vec<String>> = storage.get_data(LOGGING_KEY)?;
-        storage.stop();
+        storage.stop().await;
         S::clear().await?;
         storage.start().await?;
         storage.insert_mnemonic(m)?;
-        storage.set_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
-        storage.set_data(DEVICE_ID_KEY.to_string(), device_id, None)?;
-        storage.set_data(LOGGING_KEY.to_string(), logs, None)?;
+        storage.write_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
+        storage.write_data(DEVICE_ID_KEY.to_string(), device_id, None)?;
+        storage.write_data(LOGGING_KEY.to_string(), logs, None)?;
 
         Ok(())
     }

@@ -120,7 +120,7 @@ impl<S: MutinyStorage> LabelStorage for S {
         // update the labels map
         let mut address_labels = self.get_address_labels()?;
         address_labels.insert(address.to_string(), labels.clone());
-        self.set_data(ADDRESS_LABELS_MAP_KEY.to_string(), address_labels, None)?;
+        self.write_data(ADDRESS_LABELS_MAP_KEY.to_string(), address_labels, None)?;
 
         // update the label items
         let now = crate::utils::now().as_secs();
@@ -142,7 +142,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                         self.edit_contact(&label, contact)?;
                     }
 
-                    self.set_data(key, label_item, None)?;
+                    self.write_data(key, label_item, None)?;
                 }
                 None => {
                     let mut addresses = HashSet::with_capacity(1);
@@ -153,7 +153,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                         invoices: HashSet::new(),
                         last_used_time: now,
                     };
-                    self.set_data(key, label_item, None)?;
+                    self.write_data(key, label_item, None)?;
                 }
             }
         }
@@ -169,7 +169,7 @@ impl<S: MutinyStorage> LabelStorage for S {
         // update the labels map
         let mut invoice_labels = self.get_invoice_labels()?;
         invoice_labels.insert(invoice.clone(), labels.clone());
-        self.set_data(INVOICE_LABELS_MAP_KEY.to_string(), invoice_labels, None)?;
+        self.write_data(INVOICE_LABELS_MAP_KEY.to_string(), invoice_labels, None)?;
 
         // update the label items
         let now = crate::utils::now().as_secs();
@@ -191,7 +191,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                         self.edit_contact(&label, contact)?;
                     }
 
-                    self.set_data(key, label_item, None)?;
+                    self.write_data(key, label_item, None)?;
                 }
                 None => {
                     // Create a new label item
@@ -201,7 +201,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                         invoices,
                         last_used_time: now,
                     };
-                    self.set_data(key, label_item, None)?;
+                    self.write_data(key, label_item, None)?;
                 }
             }
         }
@@ -236,7 +236,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                 // convert label into a uuid for uniqueness
                 let id = Uuid::new_v4().to_string();
                 // create label item
-                self.set_data(get_label_item_key(&id), current, None)?;
+                self.write_data(get_label_item_key(&id), current, None)?;
 
                 // replace label in address_labels with new uuid
                 let addr_labels = self.get_address_labels()?;
@@ -253,7 +253,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                         updated.insert(addr, new_labels);
                     }
                 }
-                self.set_data(ADDRESS_LABELS_MAP_KEY.to_string(), updated, None)?;
+                self.write_data(ADDRESS_LABELS_MAP_KEY.to_string(), updated, None)?;
 
                 // replace label in invoice_labels with new uuid
                 let invoice_labels = self.get_invoice_labels()?;
@@ -270,11 +270,11 @@ impl<S: MutinyStorage> LabelStorage for S {
                         updated.insert(inv, new_labels);
                     }
                 }
-                self.set_data(INVOICE_LABELS_MAP_KEY.to_string(), updated, None)?;
+                self.write_data(INVOICE_LABELS_MAP_KEY.to_string(), updated, None)?;
 
                 // create the contact
                 let key = get_contact_key(&id);
-                self.set_data(key, contact, None)?;
+                self.write_data(key, contact, None)?;
 
                 // delete old label item
                 self.delete(&[get_label_item_key(&label)])?;
@@ -288,14 +288,14 @@ impl<S: MutinyStorage> LabelStorage for S {
         // generate a uuid, this will be the "label" that we use to store the contact
         let id = Uuid::new_v4().to_string();
         let key = get_contact_key(&id);
-        self.set_data(key, contact, None)?;
+        self.write_data(key, contact, None)?;
 
         let key = get_label_item_key(&id);
         let label_item = LabelItem {
             last_used_time: crate::utils::now().as_secs(),
             ..Default::default()
         };
-        self.set_data(key, label_item, None)?;
+        self.write_data(key, label_item, None)?;
         Ok(id)
     }
 
@@ -319,7 +319,7 @@ impl<S: MutinyStorage> LabelStorage for S {
                 serde_json::to_value(inv_labels)?,
             ),
         ];
-        self.set(to_set)?;
+        self.write_raw(to_set)?;
 
         // then delete actual label
         let contact_key = get_contact_key(&id);
@@ -329,7 +329,7 @@ impl<S: MutinyStorage> LabelStorage for S {
     }
 
     fn edit_contact(&self, id: impl AsRef<str>, contact: Contact) -> Result<(), MutinyError> {
-        self.set_data(get_contact_key(&id), contact, None)
+        self.write_data(get_contact_key(&id), contact, None)
     }
 
     fn get_tag_items(&self) -> Result<Vec<TagItem>, MutinyError> {
@@ -537,14 +537,14 @@ mod tests {
     }
 
     #[test]
-    async fn test_get_address_labels() {
+    fn test_get_address_labels() {
         let test_name = "test_get_address_labels";
         log!("{}", test_name);
 
         let storage = MemoryStorage::default();
         let labels_map = create_test_address_labels_map();
         storage
-            .set_data(ADDRESS_LABELS_MAP_KEY.to_string(), labels_map.clone(), None)
+            .write_data(ADDRESS_LABELS_MAP_KEY.to_string(), labels_map.clone(), None)
             .unwrap();
 
         let result = storage.get_address_labels();
@@ -552,14 +552,14 @@ mod tests {
     }
 
     #[test]
-    async fn test_get_invoice_labels() {
+    fn test_get_invoice_labels() {
         let test_name = "test_get_invoice_labels";
         log!("{}", test_name);
 
         let storage = MemoryStorage::default();
         let labels_map = create_test_invoice_labels_map();
         storage
-            .set_data(INVOICE_LABELS_MAP_KEY.to_string(), labels_map.clone(), None)
+            .write_data(INVOICE_LABELS_MAP_KEY.to_string(), labels_map.clone(), None)
             .unwrap();
 
         let result = storage.get_invoice_labels();
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    async fn test_get_labels() {
+    fn test_get_labels() {
         let test_name = "test_get_labels";
         log!("{}", test_name);
 
@@ -576,7 +576,7 @@ mod tests {
         let labels = create_test_labels();
         for (label, label_item) in labels.clone() {
             storage
-                .set_data(get_label_item_key(label), label_item, None)
+                .write_data(get_label_item_key(label), label_item, None)
                 .unwrap();
         }
 
@@ -601,7 +601,7 @@ mod tests {
         let labels = create_test_labels();
         for (label, label_item) in labels.clone() {
             storage
-                .set_data(get_label_item_key(label), label_item, None)
+                .write_data(get_label_item_key(label), label_item, None)
                 .unwrap();
         }
 
@@ -645,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    async fn test_get_contacts() {
+    fn test_get_contacts() {
         let test_name = "test_get_contacts";
         log!("{}", test_name);
 
@@ -654,7 +654,7 @@ mod tests {
         let contacts = create_test_contacts();
         for (id, contact) in contacts.clone() {
             storage
-                .set_data(get_contact_key(id), contact, None)
+                .write_data(get_contact_key(id), contact, None)
                 .unwrap();
         }
 
@@ -837,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    async fn test_get_tag_items() {
+    fn test_get_tag_items() {
         let test_name = "test_get_tag_items";
         log!("{}", test_name);
 
@@ -853,7 +853,7 @@ mod tests {
         let labels = create_test_labels();
         for (label, label_item) in labels {
             storage
-                .set_data(get_label_item_key(label.clone()), label_item.clone(), None)
+                .write_data(get_label_item_key(label.clone()), label_item.clone(), None)
                 .unwrap();
             expected_tag_items.push(TagItem::Label((label, label_item)));
         }

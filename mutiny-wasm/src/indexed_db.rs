@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
+use utils::DBTasks;
 use wasm_bindgen::JsValue;
-use wasm_bindgen_futures::spawn_local;
 
 pub(crate) const WALLET_DATABASE_NAME: &str = "wallet";
 pub(crate) const WALLET_OBJECT_STORE_NAME: &str = "wallet_store";
@@ -47,6 +47,7 @@ pub struct IndexedDbStorage {
     logger: Arc<MutinyLogger>,
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
+    tasks: Arc<DBTasks>,
 }
 
 impl IndexedDbStorage {
@@ -79,6 +80,7 @@ impl IndexedDbStorage {
             logger,
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
+            tasks: Arc::new(Default::default()),
         })
     }
 
@@ -335,7 +337,7 @@ impl IndexedDbStorage {
             }
 
             let json: Value = value.into_serde()?;
-            map.set(vec![(key, json)])?;
+            map.write_raw(vec![(key, json)])?;
         }
         log_trace!(
             logger,
@@ -362,7 +364,7 @@ impl IndexedDbStorage {
                 let mut items_vector = Vec::with_capacity(results.len());
                 for (key, value) in results.into_iter().flatten() {
                     // save to memory and batch the write to local storage
-                    map.set_data(key.clone(), value.clone(), None)?;
+                    map.write_data(key.clone(), value.clone(), None)?;
                     items_vector.push((key, value));
                 }
                 if !items_vector.is_empty() {
@@ -565,7 +567,10 @@ impl MutinyStorage for IndexedDbStorage {
         self.activity_index.clone()
     }
 
-    fn set(&self, items: Vec<(String, impl Serialize)>) -> Result<(), MutinyError> {
+    fn write_raw<T>(&self, items: Vec<(String, T)>) -> Result<(), MutinyError>
+    where
+        T: Serialize + Send,
+    {
         let items = items
             .into_iter()
             .map(|(k, v)| {
@@ -579,49 +584,28 @@ impl MutinyStorage for IndexedDbStorage {
 
         let indexed_db = self.indexed_db.clone();
         let items_clone = items.clone();
-        let logger = self.logger.clone();
-        spawn_local(async move {
-            if let Err(e) = Self::save_to_indexed_db(&indexed_db, &items_clone).await {
-                log_error!(
-                    logger,
-                    "Failed to save ({items_clone:?}) to indexed db: {e}"
-                );
-            };
+
+        // write to index DB in background job
+        self.spawn(async move {
+            Self::save_to_indexed_db(&indexed_db, &items_clone)
+                .await
+                .map_err(|e| MutinyError::PersistenceFailed {
+                    source: MutinyStorageError::Other(anyhow!(
+                        "Failed to save ({items_clone:?}) to indexed db: {e}"
+                    )),
+                })
         });
 
         // some values only are read once, so we don't need to write them to memory,
         // just need them in indexed db for next time
+        let mut map = self
+            .memory
+            .try_write()
+            .map_err(|e| MutinyError::write_err(e.into()))?;
         for (key, data) in items {
             if !used_once(key.as_ref()) {
-                let mut map = self
-                    .memory
-                    .try_write()
-                    .map_err(|e| MutinyError::write_err(e.into()))?;
                 map.insert(key, data);
             }
-        }
-
-        Ok(())
-    }
-
-    async fn set_async<T>(&self, key: String, value: T) -> Result<(), MutinyError>
-    where
-        T: Serialize,
-    {
-        let data = serde_json::to_value(value).map_err(|e| MutinyError::PersistenceFailed {
-            source: MutinyStorageError::SerdeError { source: e },
-        })?;
-
-        Self::save_to_indexed_db(&self.indexed_db, &[(key.clone(), data.clone())]).await?;
-
-        // some values only are read once, so we don't need to write them to memory,
-        // just need them in indexed db for next time
-        if !used_once(key.as_ref()) {
-            let mut map = self
-                .memory
-                .try_write()
-                .map_err(|e| MutinyError::write_err(e.into()))?;
-            map.insert(key, data);
         }
 
         Ok(())
@@ -645,11 +629,11 @@ impl MutinyStorage for IndexedDbStorage {
                 let data: T = serde_json::from_value(value)?;
 
                 // some values only are read once, so we can remove them from memory
+                let mut map = self
+                    .memory
+                    .try_write()
+                    .map_err(|e| MutinyError::write_err(e.into()))?;
                 if used_once(key.as_ref()) {
-                    let mut map = self
-                        .memory
-                        .try_write()
-                        .map_err(|e| MutinyError::write_err(e.into()))?;
                     map.remove(key.as_ref());
                 }
 
@@ -663,14 +647,15 @@ impl MutinyStorage for IndexedDbStorage {
 
         let indexed_db = self.indexed_db.clone();
         let keys_clone = keys.clone();
-        let logger = self.logger.clone();
-        spawn_local(async move {
-            if let Err(e) = Self::delete_from_indexed_db(&indexed_db, &keys_clone).await {
-                log_error!(
-                    logger,
-                    "Failed to delete ({keys_clone:?}) from indexed db: {e}"
-                );
-            }
+
+        self.spawn(async move {
+            Self::delete_from_indexed_db(&indexed_db, &keys_clone)
+                .await
+                .map_err(|e| MutinyError::PersistenceFailed {
+                    source: MutinyStorageError::Other(anyhow!(
+                        "Failed to delete ({keys_clone:?}) from indexed db: {e}"
+                    )),
+                })
         });
 
         let mut map = self
@@ -708,7 +693,26 @@ impl MutinyStorage for IndexedDbStorage {
         Ok(())
     }
 
-    fn stop(&self) {
+    fn spawn<Fut: futures::future::Future<Output = Result<(), MutinyError>> + 'static>(
+        &self,
+        fut: Fut,
+    ) {
+        let logger = self.logger.clone();
+        let tasks = self.tasks.clone();
+        tasks.inc_started();
+        utils::spawn(async move {
+            if let Err(err) = fut.await {
+                log_error!(logger, "DBTask error {:?}", err);
+            }
+            tasks.inc_done();
+        })
+    }
+
+    async fn stop(&self) {
+        // Wait all back ground tasks
+        self.tasks.wait().await;
+
+        // close DB
         if let Ok(mut indexed_db_lock) = self.indexed_db.try_write() {
             if let Some(indexed_db) = indexed_db_lock.0.take() {
                 indexed_db.close();
@@ -865,7 +869,7 @@ mod tests {
         let result: Option<String> = storage.get(&key).unwrap();
         assert_eq!(result, None);
 
-        storage.set(vec![(key.clone(), value)]).unwrap();
+        storage.write_raw(vec![(key.clone(), value)]).unwrap();
 
         let result: Option<String> = storage.get(&key).unwrap();
         assert_eq!(result, Some(value.to_string()));
@@ -939,7 +943,7 @@ mod tests {
             .await
             .unwrap();
 
-        storage.set(vec![(key.clone(), value)]).unwrap();
+        storage.write_raw(vec![(key.clone(), value)]).unwrap();
 
         IndexedDbStorage::clear().await.unwrap();
 
@@ -1006,7 +1010,7 @@ mod tests {
             .unwrap();
         let seed = generate_seed(12).unwrap();
         storage
-            .set_data(MNEMONIC_KEY.to_string(), seed, None)
+            .write_data(MNEMONIC_KEY.to_string(), seed, None)
             .unwrap();
         // wait for the storage to be persisted
         utils::sleep(1_000).await;
