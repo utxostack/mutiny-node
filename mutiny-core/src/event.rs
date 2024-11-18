@@ -13,7 +13,7 @@ use bitcoin::absolute::LockTime;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::secp256k1::Secp256k1;
 use core::fmt;
-use lightning::events::{Event, PaymentPurpose, ReplayEvent};
+use lightning::events::{BumpTransactionEvent, Event, PaymentPurpose, ReplayEvent};
 use lightning::sign::SpendableOutputDescriptor;
 use lightning::{
     log_debug, log_error, log_info, log_warn, util::errors::APIError, util::logger::Logger,
@@ -99,6 +99,7 @@ pub struct EventHandler<S: MutinyStorage> {
     bump_tx_event_handler: Arc<BumpTxEventHandler<S>>,
     lsp_client: Option<AnyLsp<S>>,
     logger: Arc<MutinyLogger>,
+    do_not_bump_channel_closed_tx: bool,
 }
 
 impl<S: MutinyStorage> EventHandler<S> {
@@ -112,6 +113,7 @@ impl<S: MutinyStorage> EventHandler<S> {
         bump_tx_event_handler: Arc<BumpTxEventHandler<S>>,
         lsp_client: Option<AnyLsp<S>>,
         logger: Arc<MutinyLogger>,
+        do_not_bump_channel_closed_tx: bool,
     ) -> Self {
         Self {
             channel_manager,
@@ -122,6 +124,7 @@ impl<S: MutinyStorage> EventHandler<S> {
             persister,
             bump_tx_event_handler,
             logger,
+            do_not_bump_channel_closed_tx,
         }
     }
 
@@ -642,7 +645,16 @@ impl<S: MutinyStorage> EventHandler<S> {
             Event::HTLCIntercepted { .. } => {}
             Event::BumpTransaction(event) => {
                 log_debug!(self.logger, "EVENT: BumpTransaction: {event:?}");
-                self.bump_tx_event_handler.handle_event(&event);
+                match event {
+                    BumpTransactionEvent::ChannelClose { .. }
+                        if self.do_not_bump_channel_closed_tx =>
+                    {
+                        log_debug!(self.logger, "Skip BumpTransaction for {event:?}");
+                    }
+                    _ => {
+                        self.bump_tx_event_handler.handle_event(&event);
+                    }
+                }
             }
             Event::ConnectionNeeded { node_id, addresses } => {
                 // we don't support bolt 12 yet, and we won't have the connection info anyways

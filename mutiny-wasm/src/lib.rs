@@ -96,18 +96,13 @@ impl MutinyWallet {
         skip_device_lock: Option<bool>,
         safe_mode: Option<bool>,
         skip_hodl_invoices: Option<bool>,
-        nsec_override: Option<String>,
+        do_not_bump_channel_close_tx: Option<bool>,
         nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         peer_event_topic: Option<String>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
-        // if both are set throw an error
-        // todo default to nsec if both are for same key?
-        if nsec_override.is_some() && nip_07_key.is_some() {
-            return Err(MutinyJsError::InvalidArgumentsError);
-        }
 
         utils::set_panic_hook();
         let mut init = INITIALIZED.lock().await;
@@ -151,7 +146,7 @@ impl MutinyWallet {
             skip_device_lock,
             safe_mode,
             skip_hodl_invoices,
-            nsec_override,
+            do_not_bump_channel_close_tx,
             nip_07_key,
             blind_auth_url,
             hermes_url,
@@ -193,7 +188,7 @@ impl MutinyWallet {
         skip_device_lock: Option<bool>,
         safe_mode: Option<bool>,
         skip_hodl_invoices: Option<bool>,
-        _nsec_override: Option<String>,
+        do_not_bump_channel_close_tx: Option<bool>,
         _nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
@@ -271,6 +266,9 @@ impl MutinyWallet {
         }
         if let Some(true) = do_not_connect_peers {
             config_builder.do_not_connect_peers();
+        }
+        if let Some(true) = do_not_bump_channel_close_tx {
+            config_builder.do_not_bump_channel_close_tx();
         }
         if safe_mode {
             config_builder.with_safe_mode();
