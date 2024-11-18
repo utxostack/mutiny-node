@@ -208,6 +208,7 @@ pub struct NodeBuilder<S: MutinyStorage> {
     lsp_config: Option<LspConfig>,
     logger: Option<Arc<MutinyLogger>>,
     do_not_connect_peers: bool,
+    do_not_bump_channel_close_tx: bool,
 }
 
 impl<S: MutinyStorage> NodeBuilder<S> {
@@ -231,6 +232,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             logger: None,
             network: None,
             do_not_connect_peers: false,
+            do_not_bump_channel_close_tx: false,
         }
     }
 
@@ -318,6 +320,10 @@ impl<S: MutinyStorage> NodeBuilder<S> {
 
     pub fn do_not_connect_peers(&mut self) {
         self.do_not_connect_peers = true;
+    }
+
+    pub fn do_not_bump_channel_close_tx(&mut self) {
+        self.do_not_bump_channel_close_tx = true;
     }
 
     pub fn log_params(&self, logger: &Arc<MutinyLogger>) {
@@ -590,6 +596,11 @@ impl<S: MutinyStorage> NodeBuilder<S> {
 
         // init event handler
         log_trace!(logger, "creating event handler");
+
+        if self.do_not_bump_channel_close_tx {
+            log_info!(logger, "Disable bump for channel close transaction");
+        }
+
         let event_handler = EventHandler::new(
             channel_manager.clone(),
             fee_estimator.clone(),
@@ -599,6 +610,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             bump_tx_event_handler,
             lsp_client.clone(),
             logger.clone(),
+            self.do_not_bump_channel_close_tx,
         );
         log_trace!(logger, "finished creating event handler");
 

@@ -431,6 +431,10 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
                     node_builder.do_not_connect_peers();
                 }
 
+                if c.do_not_bump_channel_close_tx {
+                    node_builder.do_not_bump_channel_close_tx();
+                }
+
                 let node = node_builder.build().await?;
 
                 let id = node
@@ -500,6 +504,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             lsp_config,
             logger,
             do_not_connect_peers: c.do_not_connect_peers,
+            do_not_bump_channel_close_tx: c.do_not_bump_channel_close_tx,
             safe_mode: c.safe_mode,
             has_done_initial_ldk_sync,
         };
@@ -535,6 +540,7 @@ pub struct NodeManager<S: MutinyStorage> {
     pub(crate) lsp_config: Option<LspConfig>,
     pub(crate) logger: Arc<MutinyLogger>,
     do_not_connect_peers: bool,
+    do_not_bump_channel_close_tx: bool,
     pub safe_mode: bool,
     /// If we've completed an initial sync this instance
     pub(crate) has_done_initial_ldk_sync: Arc<AtomicBool>,
@@ -1992,6 +1998,10 @@ pub(crate) async fn create_new_node_from_node_manager<S: MutinyStorage>(
     }
     if node_manager.do_not_connect_peers {
         node_builder.do_not_connect_peers();
+    }
+
+    if node_manager.do_not_bump_channel_close_tx {
+        node_builder.do_not_bump_channel_close_tx();
     }
 
     let new_node = node_builder.build().await?;

@@ -522,6 +522,7 @@ pub struct MutinyWalletConfigBuilder {
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
+    do_not_bump_channel_close_tx: bool,
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
@@ -543,6 +544,7 @@ impl MutinyWalletConfigBuilder {
             blind_auth_url: None,
             hermes_url: None,
             do_not_connect_peers: false,
+            do_not_bump_channel_close_tx: false,
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
@@ -596,6 +598,10 @@ impl MutinyWalletConfigBuilder {
         self.do_not_connect_peers = true;
     }
 
+    pub fn do_not_bump_channel_close_tx(&mut self) {
+        self.do_not_bump_channel_close_tx = true;
+    }
+
     pub fn with_skip_device_lock(&mut self) {
         self.skip_device_lock = true;
     }
@@ -626,6 +632,7 @@ impl MutinyWalletConfigBuilder {
             blind_auth_url: self.blind_auth_url,
             hermes_url: self.hermes_url,
             do_not_connect_peers: self.do_not_connect_peers,
+            do_not_bump_channel_close_tx: self.do_not_bump_channel_close_tx,
             skip_device_lock: self.skip_device_lock,
             safe_mode: self.safe_mode,
             skip_hodl_invoices: self.skip_hodl_invoices,
@@ -648,6 +655,7 @@ pub struct MutinyWalletConfig {
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
+    do_not_bump_channel_close_tx: bool,
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
@@ -664,6 +672,7 @@ pub struct MutinyWalletBuilder<S: MutinyStorage> {
     peer_event_callback: Option<PeerEventCallback>,
     subscription_url: Option<String>,
     do_not_connect_peers: bool,
+    do_not_bump_channel_close_tx: bool,
     skip_hodl_invoices: bool,
     skip_device_lock: bool,
     safe_mode: bool,
@@ -682,6 +691,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             hermes_url: None,
             peer_event_callback: None,
             do_not_connect_peers: false,
+            do_not_bump_channel_close_tx: false,
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
@@ -691,6 +701,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
     pub fn with_config(mut self, config: MutinyWalletConfig) -> MutinyWalletBuilder<S> {
         self.network = Some(config.network);
         self.do_not_connect_peers = config.do_not_connect_peers;
+        self.do_not_bump_channel_close_tx = config.do_not_bump_channel_close_tx;
         self.skip_hodl_invoices = config.skip_hodl_invoices;
         self.skip_device_lock = config.skip_device_lock;
         self.safe_mode = config.safe_mode;
@@ -727,6 +738,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
     pub fn do_not_connect_peers(&mut self) {
         self.do_not_connect_peers = true;
+    }
+
+    pub fn do_not_bump_channel_close_tx(&mut self) {
+        self.do_not_bump_channel_close_tx = true;
     }
 
     pub fn do_not_skip_hodl_invoices(&mut self) {
