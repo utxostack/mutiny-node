@@ -895,7 +895,11 @@ pub(crate) fn persist_payment_info<S: MutinyStorage>(
     inbound: bool,
 ) -> Result<(), MutinyError> {
     let key = payment_key(inbound, payment_hash);
-    storage.write_data(key.clone(), payment_info.clone(), None)?;
+    storage.write_data(
+        key.clone(),
+        payment_info.clone(),
+        Some(payment_info.last_update as u32),
+    )?;
 
     // insert into activity index
     match payment_info.status {

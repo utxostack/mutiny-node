@@ -24,7 +24,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct PaymentInfo {
+pub struct PaymentInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preimage: Option<[u8; 32]>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +44,7 @@ pub(crate) struct PaymentInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct MillisatAmount(pub Option<u64>);
+pub struct MillisatAmount(pub Option<u64>);
 
 impl MillisatAmount {
     pub fn is_none(&self) -> bool {
