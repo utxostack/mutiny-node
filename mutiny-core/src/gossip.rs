@@ -159,7 +159,7 @@ fn write_gossip_data(
     _network_graph: &NetworkGraph,
 ) -> Result<(), MutinyError> {
     // Save the last sync timestamp
-    storage.set_data(GOSSIP_SYNC_TIME_KEY.to_string(), last_sync_timestamp, None)?;
+    storage.write_data(GOSSIP_SYNC_TIME_KEY.to_string(), last_sync_timestamp, None)?;
 
     // Save the network graph
     // skip for now, we don't read it currently
@@ -411,7 +411,7 @@ pub(crate) fn save_peer_connection_info(
         },
     };
 
-    storage.set_data(key, new_info, None)?;
+    storage.write_data(key, new_info, None)?;
     Ok(())
 }
 
@@ -437,7 +437,7 @@ pub(crate) fn set_peer_label(
         },
     };
 
-    storage.set_data(key, new_info, None)?;
+    storage.write_data(key, new_info, None)?;
     Ok(())
 }
 
@@ -455,7 +455,7 @@ pub(crate) fn delete_peer_info(
         if current.nodes.is_empty() {
             storage.delete(&[key])?;
         } else {
-            storage.set_data(key, current, None)?;
+            storage.write_data(key, current, None)?;
         }
     }
 
@@ -475,7 +475,7 @@ pub(crate) fn save_ln_peer_info(
 
     // if the new info is different than the current info, we should to save it
     if !current.is_some_and(|c| c == new_info) {
-        storage.set_data(key, new_info, None)?;
+        storage.write_data(key, new_info, None)?;
     }
 
     Ok(())

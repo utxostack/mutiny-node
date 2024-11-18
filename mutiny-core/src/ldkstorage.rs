@@ -115,7 +115,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         spawn(async move {
             // Sleep before persisting to give chance for the manager to be persisted
             sleep(50).await;
-            match persist_monitor(storage, key, object, Some(version), logger.clone()).await {
+            match persist_monitor(storage, key, object, Some(version), logger.clone()) {
                 Ok(()) => {
                     log_debug!(logger, "Persisted channel monitor: {update_id:?}");
 
@@ -396,7 +396,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
             "{CHANNEL_CLOSURE_PREFIX}{}",
             user_channel_id.to_be_bytes().to_lower_hex_string()
         ));
-        self.storage.set_data(key.clone(), &closure, None)?;
+        self.storage.write_data(key.clone(), &closure, None)?;
 
         let index = self.storage.activity_index();
         let mut index = index.try_write()?;
@@ -453,7 +453,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         // add the new descriptors
         descriptors.extend(failed_hex);
 
-        self.storage.set_data(key, descriptors, None)?;
+        self.storage.write_data(key, descriptors, None)?;
 
         Ok(())
     }
@@ -474,7 +474,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
             .map(|desc| desc.encode().to_lower_hex_string())
             .collect();
 
-        self.storage.set_data(key, descriptors_hex, None)?;
+        self.storage.write_data(key, descriptors_hex, None)?;
 
         Ok(())
     }
@@ -515,7 +515,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         params: ChannelOpenParams,
     ) -> Result<(), MutinyError> {
         let key = self.get_key(&channel_open_params_key(id));
-        self.storage.set_data(key, params, None)
+        self.storage.write_data(key, params, None)
     }
 
     pub(crate) fn get_channel_open_params(
@@ -601,7 +601,7 @@ impl<'a, S: MutinyStorage>
         };
 
         self.storage
-            .set_data(key, value, Some(version))
+            .write_data(key, value, Some(version))
             .map_err(|_| lightning::io::ErrorKind::Other.into())
     }
 
@@ -618,7 +618,7 @@ impl<'a, S: MutinyStorage>
     ) -> Result<(), lightning::io::Error> {
         let scorer_str = scorer.encode().to_lower_hex_string();
         self.storage
-            .set_data(PROB_SCORER_KEY.to_string(), scorer_str, None)
+            .write_data(PROB_SCORER_KEY.to_string(), scorer_str, None)
             .map_err(|_| lightning::io::ErrorKind::Other.into())
     }
 }
@@ -685,14 +685,14 @@ pub struct MonitorUpdateIdentifier {
     pub update_id: u64,
 }
 
-pub(crate) async fn persist_monitor(
+pub(crate) fn persist_monitor(
     storage: impl MutinyStorage,
     key: String,
     object: Vec<u8>,
     version: Option<u32>,
     logger: Arc<MutinyLogger>,
 ) -> Result<(), lightning::io::Error> {
-    let res = storage.set_data_async(key.clone(), object, version).await;
+    let res = storage.write_data(key.clone(), object, version);
 
     res.map_err(|e| {
         match e {
@@ -917,7 +917,7 @@ mod test {
         // encode old version into persister
         persister
             .storage
-            .set_data(
+            .write_data(
                 persister.get_key(CHANNEL_MANAGER_KEY),
                 MANAGER_BYTES.to_vec(),
                 None,

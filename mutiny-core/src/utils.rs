@@ -14,8 +14,31 @@ use lightning::util::ser::Writeable;
 use lightning::util::ser::Writer;
 use lightning_invoice::Bolt11Invoice;
 use reqwest::Client;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
+
+// Alias Future trait
+// See explaination https://www.reddit.com/r/rust/comments/1582jku/comment/jt7yrqc/
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+
+        // Define future for wasm32
+        pub trait Future: future::Future<Output = ()> + 'static {}
+        impl<F: future::Future<Output = ()> + 'static> Future for F {}
+
+        pub trait Task: future::Future<Output = Result<(), MutinyError>> + 'static {}
+        impl<F: future::Future<Output = Result<(), MutinyError>> + 'static> Task for F {}
+
+    } else {
+
+        // Define Future for non-wasm32, note the Send trait
+        pub trait Future: future::Future<Output = ()> + Send + 'static {}
+        impl<F: future::Future<Output = ()> + Send + 'static> Future for F {}
+
+        pub trait Task: future::Future<Output = Result<(), MutinyError>> + Send + 'static {}
+        impl<F: future::Future<Output = Result<(), MutinyError>> + Send + 'static> Task for F {}
+    }
+}
 
 pub const FETCH_TIMEOUT: i32 = 30_000;
 
@@ -200,13 +223,41 @@ impl StopHandle {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-pub fn spawn_with_handle<
-    F: FnOnce(StopSignal) -> Fut + 'static,
-    Fut: future::Future<Output = ()> + 'static,
->(
-    f: F,
-) -> StopHandle {
+pub struct DBTasks {
+    pub started: AtomicU64,
+    pub done: AtomicU64,
+}
+
+impl DBTasks {
+    pub fn inc_started(&self) {
+        use std::sync::atomic::Ordering;
+        self.started.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_done(&self) {
+        use std::sync::atomic::Ordering;
+        self.done.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub async fn wait(&self) {
+        use std::sync::atomic::Ordering;
+
+        while self.started.load(Ordering::Relaxed) != self.done.load(Ordering::Relaxed) {
+            sleep(200).await;
+        }
+    }
+}
+
+impl Default for DBTasks {
+    fn default() -> Self {
+        Self {
+            started: AtomicU64::new(0),
+            done: AtomicU64::new(0),
+        }
+    }
+}
+
+pub fn spawn_with_handle<F: FnOnce(StopSignal) -> Fut + 'static, Fut: Future>(f: F) -> StopHandle {
     let stopping = Arc::new(AtomicBool::new(false));
     let stopped = Arc::new(AtomicBool::new(false));
 
@@ -228,28 +279,6 @@ where
     F: future::Future<Output = ()> + 'static,
 {
     wasm_bindgen_futures::spawn_local(future);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn spawn_with_handle<
-    F: FnOnce(StopSignal) -> Fut + Send + 'static,
-    Fut: future::Future<Output = ()> + Send + 'static,
->(
-    f: F,
-) -> StopHandle {
-    let stopping = Arc::new(AtomicBool::new(false));
-    let stopped = Arc::new(AtomicBool::new(false));
-
-    let fut = f(StopSignal(stopping.clone()));
-    spawn({
-        let stopped = stopped.clone();
-        async move {
-            fut.await;
-            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-    });
-
-    StopHandle { stopping, stopped }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

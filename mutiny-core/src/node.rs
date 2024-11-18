@@ -942,8 +942,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
                             object,
                             Some(version),
                             retry_logger.clone(),
-                        )
-                        .await;
+                        );
 
                         match res {
 							Ok(_) => {

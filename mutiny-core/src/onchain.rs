@@ -94,7 +94,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             Some(Err(bdk_wallet::LoadError::Mismatch(_))) => {
                 // failed to read storage, means we have old encoding and need to delete and re-init wallet
                 db.delete(&[KEYCHAIN_STORE_KEY])?;
-                db.set_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
+                db.write_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
                 Wallet::create_with_params(
                     CreateParams::new(receive_descriptor_template, change_descriptor_template)
                         .network(network),
