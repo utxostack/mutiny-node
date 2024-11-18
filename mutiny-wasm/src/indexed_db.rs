@@ -6,6 +6,7 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace};
 use log::error;
+use mutiny_core::event::PaymentInfo;
 use mutiny_core::logging::MutinyLogger;
 use mutiny_core::logging::LOGGING_KEY;
 use mutiny_core::nodemanager::NodeStorage;
@@ -484,6 +485,36 @@ impl IndexedDbStorage {
                         None => {
                             let obj = vss.get_object(&kv.key).await?;
                             if serde_json::from_value::<VersionedValue>(obj.value.clone()).is_ok() {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
+                } else if key.starts_with(PAYMENT_INBOUND_PREFIX_KEY)
+                    || key.starts_with(PAYMENT_OUTBOUND_PREFIX_KEY)
+                {
+                    // we can get version from payment info, so we should compare
+                    match current.get_data::<PaymentInfo>(&kv.key)? {
+                        Some(info) => {
+                            if (info.last_update as u32) < kv.version {
+                                let obj = vss.get_object(&kv.key).await?;
+                                if serde_json::from_value::<PaymentInfo>(obj.value.clone()).is_ok()
+                                {
+                                    return Ok(Some((kv.key, obj.value)));
+                                }
+                            } else {
+                                log_debug!(
+                                    logger,
+                                    "Skipping vss key {} with version {}, current version is {}",
+                                    kv.key,
+                                    kv.version,
+                                    info.last_update
+                                );
+                                return Ok(None);
+                            }
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<PaymentInfo>(obj.value.clone()).is_ok() {
                                 return Ok(Some((kv.key, obj.value)));
                             }
                         }
