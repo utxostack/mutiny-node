@@ -298,6 +298,12 @@ impl MutinyWallet {
         self.inner.is_safe_mode()
     }
 
+    #[wasm_bindgen]
+    pub async fn get_version() -> String {
+        let version = env!("CARGO_PKG_VERSION");
+        version.to_string()
+    }
+
     /// Returns if there is a saved wallet in storage.
     /// This is checked by seeing if a mnemonic seed exists in storage.
     #[wasm_bindgen]
