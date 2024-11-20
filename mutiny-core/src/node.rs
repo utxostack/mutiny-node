@@ -1228,6 +1228,86 @@ impl<S: MutinyStorage> Node<S> {
         res
     }
 
+    fn get_outbound_capacity_msat(&self) -> u64 {
+        let channels = self.channel_manager.list_channels();
+        self.chain_monitor
+            .get_claimable_balances(
+                &channels
+                    .iter()
+                    // only consider channels that are confirmed
+                    .filter(|c| !c.is_channel_ready)
+                    .collect::<Vec<_>>(),
+            )
+            .into_iter()
+            .map(|b| b.claimable_amount_satoshis())
+            .sum::<u64>()
+            * 1000
+    }
+
+    fn get_inbound_capacity_msat(&self) -> u64 {
+        self.channel_manager
+            .list_usable_channels()
+            .iter()
+            .map(|c| c.inbound_capacity_msat)
+            .sum()
+    }
+
+    async fn try_connect_unusable_channel_peers(&self) -> Result<(), MutinyError> {
+        log_trace!(self.logger, "calling try_connect_unusable_channel peers");
+
+        let node_ids = self.peer_manager.get_peer_node_ids();
+        for channel in self.channel_manager.list_channels() {
+            if channel.is_usable || node_ids.contains(&channel.counterparty.node_id) {
+                // skip connected peers
+                continue;
+            }
+
+            let node_id = channel.counterparty.node_id.into();
+
+            log_debug!(self.logger, "try connect peer {}", &node_id);
+
+            let Some(peer_connection_string) = read_peer_info(&self.persister.storage, &node_id)?
+                .and_then(|peer_info| peer_info.connection_string)
+            else {
+                log_debug!(
+                        self.logger,
+                        "failed to connect peer {} because we can't find peer connection string from storage",
+                        &node_id
+                    );
+                continue;
+            };
+
+            log_debug!(
+                self.logger,
+                "find peer connection string {}",
+                &peer_connection_string
+            );
+
+            let connect_info = match PubkeyConnectionInfo::new(&peer_connection_string) {
+                Ok(info) => info,
+                Err(err) => {
+                    log_debug!(
+                        self.logger,
+                        "failed to parse peer connection string {}, error {:?}",
+                        &peer_connection_string,
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            if let Err(err) = self.connect_peer(connect_info, None).await {
+                log_debug!(self.logger, "failed to connect, error {:?}", err);
+            }
+        }
+
+        log_trace!(
+            self.logger,
+            "finished calling try_connect_unusable_channel peers"
+        );
+        Ok(())
+    }
+
     pub async fn create_invoice(
         &self,
         amount_sat: u64,
@@ -1237,29 +1317,36 @@ impl<S: MutinyStorage> Node<S> {
     ) -> Result<(Bolt11Invoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
+        if amount_sat < 1 {
+            return Err(MutinyError::BadAmountError);
+        }
+
         let res = match self.lsp_client.as_ref() {
             Some(lsp) => {
                 let connect = lsp.get_lsp_connection_string().await;
                 self.connect_peer(PubkeyConnectionInfo::new(&connect)?, None)
                     .await?;
 
-                let inbound_capacity_msat: u64 = self
-                    .channel_manager
-                    .list_usable_channels()
-                    .iter()
-                    .map(|c| c.inbound_capacity_msat)
-                    .sum();
-
+                let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
                 log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
 
                 if inbound_capacity_msat < amount_sat * 1_000 {
-                    return Err(MutinyError::Other(anyhow!(
-                        "Inbound capacity not enough, capacity {}msats, creating invoice amount {}msats", inbound_capacity_msat , amount_sat * 1000
-                    )));
-                }
+                    log_debug!(
+                        self.logger,
+                        "Inbound capacity insufficient, try to resume disconnect channels..."
+                    );
+                    if let Err(err) = self.try_connect_unusable_channel_peers().await {
+                        log_debug!(
+                            self.logger,
+                            "try connect unusable_channel_peers error {err:?}"
+                        );
+                    }
 
-                if amount_sat < 1 {
-                    return Err(MutinyError::BadAmountError);
+                    let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
+                    log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
+                    if inbound_capacity_msat < amount_sat * 1_000 {
+                        return Err(MutinyError::InsufficientBalance);
+                    }
                 }
 
                 Ok((
@@ -1451,24 +1538,21 @@ impl<S: MutinyStorage> Node<S> {
             .ok_or(MutinyError::InvoiceInvalid)?;
 
         // check if we have enough balance to send
-        let channels = self.channel_manager.list_channels();
-        if self
-            .chain_monitor
-            .get_claimable_balances(
-                &channels
-                    .iter()
-                    // only consider channels that are confirmed
-                    .filter(|c| !c.is_channel_ready)
-                    .collect::<Vec<_>>(),
-            )
-            .into_iter()
-            .map(|b| b.claimable_amount_satoshis())
-            .sum::<u64>()
-            * 1000
-            < send_msats
-        {
-            // Channels exist but not enough capacity
-            return Err(MutinyError::InsufficientBalance);
+        if self.get_outbound_capacity_msat() < send_msats {
+            log_debug!(
+                self.logger,
+                "Outbound capacity insufficient, try to resume disconnect channels..."
+            );
+            if let Err(err) = self.try_connect_unusable_channel_peers().await {
+                log_debug!(
+                    self.logger,
+                    "try connect unusable_channel_peers error {err:?}"
+                );
+            }
+            if self.get_outbound_capacity_msat() < send_msats {
+                // Channels exist but not enough capacity
+                return Err(MutinyError::InsufficientBalance);
+            }
         }
 
         // make sure node at least has one connection before attempting payment
