@@ -1293,22 +1293,6 @@ impl<S: MutinyStorage> NodeManager<S> {
             return Err(MutinyError::NotRunning);
         }
 
-        // check if any nodes have active channels with the current LSP
-        // if they do, we can't change the LSP
-        let nodes = self.nodes.read().await;
-        for node in nodes.values() {
-            if let Some(ref lsp) = node.lsp_client {
-                if !node
-                    .channel_manager
-                    .list_channels_with_counterparty(&lsp.get_lsp_pubkey().await)
-                    .is_empty()
-                {
-                    return Err(MutinyError::LspGenericError);
-                }
-            }
-        }
-        drop(nodes);
-
         // verify that the LSP config is valid
         match lsp_config.as_mut() {
             Some(LspConfig::VoltageFlow(config)) => {
