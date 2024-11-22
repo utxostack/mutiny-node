@@ -643,19 +643,32 @@ impl<S: MutinyStorage> EventHandler<S> {
                 }
             }
             Event::HTLCIntercepted { .. } => {}
-            Event::BumpTransaction(event) => {
-                log_debug!(self.logger, "EVENT: BumpTransaction: {event:?}");
-                match event {
-                    BumpTransactionEvent::ChannelClose { .. }
-                        if self.do_not_bump_channel_closed_tx =>
-                    {
-                        log_debug!(self.logger, "Skip BumpTransaction for {event:?}");
-                    }
-                    _ => {
+            Event::BumpTransaction(event) => match &event {
+                BumpTransactionEvent::ChannelClose {
+                    channel_id,
+                    commitment_tx,
+                    ..
+                } => {
+                    let hex_tx = bitcoin::consensus::encode::serialize_hex(commitment_tx);
+                    log_debug!(
+                        self.logger,
+                        "EVENT: BumpTransaction channel_id {} tx_id {:x}\nhex_tx {}",
+                        channel_id,
+                        commitment_tx.compute_txid(),
+                        hex_tx
+                    );
+                    if self.do_not_bump_channel_closed_tx {
+                        log_debug!(self.logger, "Skip channel close transaction");
+                    } else {
+                        log_debug!(self.logger, "Bump channel close transaction");
                         self.bump_tx_event_handler.handle_event(&event);
                     }
                 }
-            }
+                _ => {
+                    log_debug!(self.logger, "EVENT: BumpTransaction: {event:?}");
+                    self.bump_tx_event_handler.handle_event(&event);
+                }
+            },
             Event::ConnectionNeeded { node_id, addresses } => {
                 // we don't support bolt 12 yet, and we won't have the connection info anyways
                 log_debug!(
