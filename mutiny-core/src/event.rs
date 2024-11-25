@@ -1,6 +1,7 @@
 use crate::ldkstorage::{MutinyNodePersister, PhantomChannelManager};
 use crate::logging::MutinyLogger;
 use crate::lsp::{AnyLsp, Lsp};
+use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::node::BumpTxEventHandler;
 use crate::nodemanager::ChannelClosure;
 use crate::onchain::OnChainWallet;
@@ -13,7 +14,7 @@ use bitcoin::absolute::LockTime;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::secp256k1::Secp256k1;
 use core::fmt;
-use lightning::events::{BumpTransactionEvent, Event, PaymentPurpose, ReplayEvent};
+use lightning::events::{BumpTransactionEvent, ClosureReason, Event, PaymentPurpose, ReplayEvent};
 use lightning::sign::SpendableOutputDescriptor;
 use lightning::{
     log_debug, log_error, log_info, log_warn, util::errors::APIError, util::logger::Logger,
@@ -100,6 +101,7 @@ pub struct EventHandler<S: MutinyStorage> {
     lsp_client: Option<AnyLsp<S>>,
     logger: Arc<MutinyLogger>,
     do_not_bump_channel_closed_tx: bool,
+    ln_event_callback: Option<CommonLnEventCallback>,
 }
 
 impl<S: MutinyStorage> EventHandler<S> {
@@ -114,6 +116,7 @@ impl<S: MutinyStorage> EventHandler<S> {
         lsp_client: Option<AnyLsp<S>>,
         logger: Arc<MutinyLogger>,
         do_not_bump_channel_closed_tx: bool,
+        ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Self {
         Self {
             channel_manager,
@@ -125,6 +128,7 @@ impl<S: MutinyStorage> EventHandler<S> {
             bump_tx_event_handler,
             logger,
             do_not_bump_channel_closed_tx,
+            ln_event_callback,
         }
     }
 
@@ -589,6 +593,23 @@ impl<S: MutinyStorage> EventHandler<S> {
                     reason
                 );
 
+                // We guess this is a force close if the reason isn't belongs to a cooperative reason
+                let maybe_force_closed = !matches!(
+                    reason,
+                    ClosureReason::LegacyCooperativeClosure
+                        | ClosureReason::LocallyInitiatedCooperativeClosure
+                        | ClosureReason::CounterpartyCoopClosedUnfundedChannel
+                        | ClosureReason::CounterpartyInitiatedCooperativeClosure
+                );
+
+                let event = CommonLnEvent::ChannelClosed {
+                    channel_id: format!("{channel_id}"),
+                    reason: format!("{reason}"),
+                    channel_funding_txo: channel_funding_txo.map(|txo| format!("{txo}")),
+                    counterparty_node_id: node_id.map(|node_id| format!("{node_id:x}")),
+                    maybe_force_closed,
+                };
+
                 let closure = ChannelClosure::new(
                     user_channel_id,
                     channel_id,
@@ -601,6 +622,10 @@ impl<S: MutinyStorage> EventHandler<S> {
                     .persist_channel_closure(user_channel_id, closure)
                 {
                     log_error!(self.logger, "Failed to persist channel closure: {e}");
+                }
+
+                if let Some(cb) = self.ln_event_callback.as_ref() {
+                    cb.trigger(event);
                 }
             }
             Event::DiscardFunding { .. } => {
@@ -649,12 +674,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                     commitment_tx,
                     ..
                 } => {
+                    let txid = format!("{:x}", commitment_tx.compute_txid());
                     let hex_tx = bitcoin::consensus::encode::serialize_hex(commitment_tx);
                     log_debug!(
                         self.logger,
-                        "EVENT: BumpTransaction channel_id {} tx_id {:x}\nhex_tx {}",
+                        "EVENT: BumpTransaction channel_id {} tx_id {}\nhex_tx {}",
                         channel_id,
-                        commitment_tx.compute_txid(),
+                        txid,
                         hex_tx
                     );
                     if self.do_not_bump_channel_closed_tx {
@@ -662,6 +688,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                     } else {
                         log_debug!(self.logger, "Bump channel close transaction");
                         self.bump_tx_event_handler.handle_event(&event);
+                    }
+                    if let Some(cb) = self.ln_event_callback.as_ref() {
+                        cb.trigger(CommonLnEvent::BumpChannelCloseTransaction {
+                            channel_id: format!("{channel_id}"),
+                            txid,
+                            hex_tx,
+                        });
                     }
                 }
                 _ => {

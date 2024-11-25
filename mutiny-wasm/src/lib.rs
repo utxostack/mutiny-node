@@ -29,7 +29,7 @@ use lightning_invoice::Bolt11Invoice;
 
 use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
-use mutiny_core::messagehandler::PeerEventCallback;
+use mutiny_core::messagehandler::CommonLnEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
 use mutiny_core::vss::MutinyVssClient;
@@ -100,7 +100,7 @@ impl MutinyWallet {
         nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
-        peer_event_topic: Option<String>,
+        ln_event_topic: Option<String>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
 
@@ -112,9 +112,9 @@ impl MutinyWallet {
             *init = true;
         }
 
-        let peer_event_callback = peer_event_topic.map(|topic| PeerEventCallback {
+        let ln_event_callback = ln_event_topic.map(|topic| CommonLnEventCallback {
             callback: Arc::new(move |event| {
-                const KEY: &str = "peer_connection_event_broadcast_channel";
+                const KEY: &str = "common_ln_event_broadcast_channel";
                 let global = web_sys::js_sys::global();
                 let value = web_sys::js_sys::Reflect::get(&global, &(KEY.into())).unwrap();
                 let channel: BroadcastChannel = if value.is_undefined() {
@@ -150,7 +150,7 @@ impl MutinyWallet {
             nip_07_key,
             blind_auth_url,
             hermes_url,
-            peer_event_callback,
+            ln_event_callback,
         )
         .await
         {
@@ -192,7 +192,7 @@ impl MutinyWallet {
         _nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
-        peer_event_callback: Option<PeerEventCallback>,
+        ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::default());
@@ -277,8 +277,8 @@ impl MutinyWallet {
 
         let mut mw_builder = MutinyWalletBuilder::new(xprivkey, storage).with_config(config);
         mw_builder.with_session_id(logger.session_id.clone());
-        if let Some(cb) = peer_event_callback {
-            mw_builder.with_peer_event_callback(cb);
+        if let Some(cb) = ln_event_callback {
+            mw_builder.with_ln_event_callback(cb);
         }
         let inner = mw_builder.build().await?;
 
