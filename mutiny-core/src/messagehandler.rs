@@ -14,25 +14,47 @@ use crate::storage::MutinyStorage;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum PeerConnectionEvent {
+pub enum CommonLnEvent {
+    // On Peer Connect
     OnConnect {
         their_node_id: String,
         inbound: bool,
         remote_network_address: Option<String>,
     },
+    // On Peer Disconnect
     OnDisconnect {
         their_node_id: String,
+    },
+    BumpChannelCloseTransaction {
+        channel_id: String,
+        txid: String,
+        hex_tx: String,
+    },
+    ChannelClosed {
+        channel_id: String,
+        reason: String,
+        counterparty_node_id: Option<String>,
+        channel_funding_txo: Option<String>,
+        // This field may return true on a cooperate close event,
+        // this must only be used to report debugging information.
+        maybe_force_closed: bool,
     },
 }
 
 #[derive(Clone)]
-pub struct PeerEventCallback {
-    pub callback: Arc<dyn Fn(PeerConnectionEvent) + Send + Sync>,
+pub struct CommonLnEventCallback {
+    pub callback: Arc<dyn Fn(CommonLnEvent) + Send + Sync>,
+}
+
+impl CommonLnEventCallback {
+    pub fn trigger(&self, event: CommonLnEvent) {
+        (self.callback)(event);
+    }
 }
 
 pub struct MutinyMessageHandler<S: MutinyStorage> {
     pub liquidity: Option<Arc<LiquidityManager<S>>>,
-    pub peer_event_callback: Option<PeerEventCallback>,
+    pub ln_event_callback: Option<CommonLnEventCallback>,
 }
 
 pub enum MutinyMessage<S: MutinyStorage> {
@@ -100,8 +122,8 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
         msg: &lightning::ln::msgs::Init,
         inbound: bool,
     ) -> Result<(), ()> {
-        if let Some(cb) = self.peer_event_callback.clone() {
-            let event = PeerConnectionEvent::OnConnect {
+        if let Some(cb) = self.ln_event_callback.clone() {
+            let event = CommonLnEvent::OnConnect {
                 their_node_id: their_node_id.to_string(),
                 inbound,
                 remote_network_address: msg
@@ -109,17 +131,17 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
                     .as_ref()
                     .map(|addr| format!("{}", addr)),
             };
-            (cb.callback)(event);
+            cb.trigger(event);
         }
         Ok(())
     }
 
     fn peer_disconnected(&self, their_node_id: &PublicKey) {
-        if let Some(cb) = self.peer_event_callback.clone() {
-            let event = PeerConnectionEvent::OnDisconnect {
+        if let Some(cb) = self.ln_event_callback.clone() {
+            let event = CommonLnEvent::OnDisconnect {
                 their_node_id: their_node_id.to_string(),
             };
-            (cb.callback)(event);
+            cb.trigger(event);
         }
     }
 }

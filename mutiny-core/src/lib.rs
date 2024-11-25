@@ -79,7 +79,7 @@ use lightning::{log_debug, log_error, log_info, log_trace, log_warn};
 pub use lightning_invoice;
 use lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription};
 
-use messagehandler::PeerEventCallback;
+use messagehandler::CommonLnEventCallback;
 use serde::{Deserialize, Serialize};
 use utils::{spawn_with_handle, StopHandle};
 
@@ -669,7 +669,7 @@ pub struct MutinyWalletBuilder<S: MutinyStorage> {
     network: Option<Network>,
     blind_auth_url: Option<String>,
     hermes_url: Option<String>,
-    peer_event_callback: Option<PeerEventCallback>,
+    ln_event_callback: Option<CommonLnEventCallback>,
     subscription_url: Option<String>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
@@ -689,7 +689,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             subscription_url: None,
             blind_auth_url: None,
             hermes_url: None,
-            peer_event_callback: None,
+            ln_event_callback: None,
             do_not_connect_peers: false,
             do_not_bump_channel_close_tx: false,
             skip_device_lock: false,
@@ -732,8 +732,8 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         self.hermes_url = Some(hermes_url);
     }
 
-    pub fn with_peer_event_callback(&mut self, cb: PeerEventCallback) {
-        self.peer_event_callback = Some(cb);
+    pub fn with_ln_event_callback(&mut self, cb: CommonLnEventCallback) {
+        self.ln_event_callback = Some(cb);
     }
 
     pub fn do_not_connect_peers(&mut self) {
@@ -835,8 +835,8 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             .with_config(config.clone());
         nm_builder.with_logger(logger.clone());
         nm_builder.with_esplora(esplora.clone());
-        if let Some(cb) = self.peer_event_callback.clone() {
-            nm_builder.with_peer_event_callback(cb);
+        if let Some(cb) = self.ln_event_callback.clone() {
+            nm_builder.with_ln_event_callback(cb);
         }
         let node_manager = Arc::new(nm_builder.build().await?);
 
