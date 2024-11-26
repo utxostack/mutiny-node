@@ -681,6 +681,7 @@ pub struct MutinyWalletBuilder<S: MutinyStorage> {
     skip_hodl_invoices: bool,
     skip_device_lock: bool,
     safe_mode: bool,
+    logs: Vec<String>,
 }
 
 impl<S: MutinyStorage> MutinyWalletBuilder<S> {
@@ -700,6 +701,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
+            logs: Default::default(),
         }
     }
 
@@ -719,6 +721,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
     pub fn with_session_id(&mut self, session_id: String) {
         self.session_id = Some(session_id);
+    }
+
+    pub fn with_logs(&mut self, logs: Vec<String>) {
+        self.logs = logs;
     }
 
     pub fn with_network(&mut self, network: Network) {
@@ -788,6 +794,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         let logger = Arc::new(MutinyLogger::with_writer(
             self.storage.clone(),
             self.session_id,
+            self.logs,
         ));
 
         // Need to prevent other devices from running at the same time
