@@ -338,6 +338,7 @@ pub struct MutinyInvoice {
     #[serde(default)]
     pub privacy_level: PrivacyLevel,
     pub fees_paid: Option<u64>,
+    pub fee_paid_msat: Option<u64>,
     pub inbound: bool,
     pub labels: Vec<String>,
     pub last_updated: u64,
@@ -357,6 +358,7 @@ impl Default for MutinyInvoice {
             status: HTLCStatus::Pending,
             privacy_level: PrivacyLevel::NotAvailable,
             fees_paid: None,
+            fee_paid_msat: None,
             inbound: false,
             labels: vec![],
             last_updated: 0,
@@ -402,6 +404,7 @@ impl From<Bolt11Invoice> for MutinyInvoice {
             status: HTLCStatus::Pending,
             privacy_level: PrivacyLevel::NotAvailable,
             fees_paid: None,
+            fee_paid_msat: None,
             inbound: true,
             labels: vec![],
             last_updated: timestamp,
@@ -420,7 +423,7 @@ impl From<MutinyInvoice> for PaymentInfo {
             .amount_sats
             .map(|s| MillisatAmount(Some(s)))
             .unwrap_or(MillisatAmount(None));
-        let fee_paid_msat = invoice.fees_paid.map(|f| f * 1_000);
+        let fee_paid_msat = invoice.fee_paid_msat;
         let bolt11 = invoice.bolt11;
         let payee_pubkey = invoice.payee_pubkey;
         let last_update = invoice.last_updated;
@@ -467,6 +470,7 @@ impl MutinyInvoice {
                     payee_pubkey: i.payee_pubkey,
                     preimage: i.preimage.map(|p| p.to_lower_hex_string()),
                     fees_paid: i.fee_paid_msat.map(|f| f / 1_000),
+                    fee_paid_msat: i.fee_paid_msat,
                     privacy_level: i.privacy_level,
                     ..invoice.into()
                 })
@@ -487,6 +491,7 @@ impl MutinyInvoice {
                     status: i.status,
                     privacy_level: i.privacy_level,
                     fees_paid,
+                    fee_paid_msat: i.fee_paid_msat,
                     inbound,
                     labels,
                     last_updated: i.last_update,
