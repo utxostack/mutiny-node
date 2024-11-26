@@ -31,6 +31,7 @@ pub struct ActivityItem {
     pub inbound: bool,
     pub(crate) labels: Vec<String>,
     pub last_updated: Option<u64>,
+    pub fee_paid_msat: Option<u64>,
     privacy_level: String,
 }
 
@@ -91,6 +92,11 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             mutiny_core::ActivityItem::ChannelClosed(_) => (false, None),
         };
 
+        let fee_paid_msat = match a {
+            mutiny_core::ActivityItem::Lightning(ref ln) => ln.fee_paid_msat,
+            _ => None,
+        };
+
         let privacy_level = match kind {
             ActivityType::OnChain => PrivacyLevel::NotAvailable,
             ActivityType::Lightning => {
@@ -109,6 +115,7 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             id,
             amount_sats,
             inbound,
+            fee_paid_msat,
             labels: a.labels(),
             last_updated: a.last_updated(),
             privacy_level: privacy_level.to_string(),
