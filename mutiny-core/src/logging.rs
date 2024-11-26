@@ -21,8 +21,12 @@ pub struct MutinyLogger {
 }
 
 impl MutinyLogger {
-    pub fn with_writer<S: MutinyStorage>(logging_db: S, session_id: Option<String>) -> Self {
-        let memory_logs = Arc::new(Mutex::new(vec![]));
+    pub fn with_writer<S: MutinyStorage>(
+        logging_db: S,
+        session_id: Option<String>,
+        logs: Vec<String>,
+    ) -> Self {
+        let memory_logs = Arc::new(Mutex::new(logs));
 
         let stop_handle = utils::spawn_with_handle({
             let memory_logs = memory_logs.clone();
@@ -72,6 +76,15 @@ impl MutinyLogger {
             memory_logs,
             stop_handle: Some(stop_handle),
         }
+    }
+
+    pub fn get_memory_logs(&self) -> Result<Vec<String>, MutinyError> {
+        let logs = self
+            .memory_logs
+            .lock()
+            .map_err(|_err| MutinyError::Other(anyhow::anyhow!("can't get memory logs lock")))?
+            .to_vec();
+        Ok(logs)
     }
 
     pub(crate) fn get_logs<S: MutinyStorage>(
@@ -231,7 +244,7 @@ mod tests {
 
         let storage = MemoryStorage::default();
 
-        let logger = MutinyLogger::with_writer(storage.clone(), None);
+        let logger = MutinyLogger::with_writer(storage.clone(), None, Default::default());
 
         let log_str = "testing logging with storage";
         log_debug!(logger, "{}", log_str);

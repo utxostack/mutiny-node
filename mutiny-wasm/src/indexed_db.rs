@@ -4,7 +4,7 @@ use bip39::Mnemonic;
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
-use lightning::{log_debug, log_error, log_info, log_trace};
+use lightning::{log_debug, log_error, log_info};
 use log::error;
 use mutiny_core::event::PaymentInfo;
 use mutiny_core::logging::MutinyLogger;
@@ -58,6 +58,7 @@ impl IndexedDbStorage {
         vss: Option<Arc<MutinyVssClient>>,
         logger: Arc<MutinyLogger>,
     ) -> Result<IndexedDbStorage, MutinyError> {
+        log_debug!(logger, "Initialize indexed DB storage");
         let idx = Self::build_indexed_db_database().await?;
         let indexed_db = Arc::new(RwLock::new(RexieContainer(Some(idx))));
         let password = password.filter(|p| !p.is_empty());
@@ -71,6 +72,8 @@ impl IndexedDbStorage {
         )
         .await?;
         let memory = Arc::new(RwLock::new(map));
+
+        log_debug!(logger, "Complete initialize indexed DB storage");
 
         Ok(IndexedDbStorage {
             password,
@@ -324,6 +327,12 @@ impl IndexedDbStorage {
             MutinyError::read_err(anyhow!("Failed to get all from store: {e}").into())
         })?;
 
+        log_info!(
+            logger,
+            "Read {} key values from browser storage",
+            all_json.len()
+        );
+
         for (key, value) in all_json {
             let key = key
                 .as_string()
@@ -340,7 +349,7 @@ impl IndexedDbStorage {
             let json: Value = value.into_serde()?;
             map.write_raw(vec![(key, json)])?;
         }
-        log_trace!(
+        log_debug!(
             logger,
             "Reading browser storage took {}ms",
             start.elapsed().as_millis()
@@ -356,6 +365,7 @@ impl IndexedDbStorage {
                 log_info!(logger, "Reading from vss");
                 let start = instant::Instant::now();
                 let keys = vss.list_key_versions(None).await?;
+                log_info!(logger, "Read {} keys from vss", keys.len());
                 let mut futs = Vec::with_capacity(keys.len());
                 for kv in keys {
                     futs.push(Self::handle_vss_key(kv, vss, &map, logger));
@@ -374,7 +384,7 @@ impl IndexedDbStorage {
                 }
                 let final_map = map.memory.read().unwrap();
 
-                log_trace!(logger, "Reading VSS took {}ms", start.elapsed().as_millis());
+                log_debug!(logger, "Reading VSS took {}ms", start.elapsed().as_millis());
 
                 Ok(final_map.clone())
             }

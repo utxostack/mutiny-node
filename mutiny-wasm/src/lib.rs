@@ -277,6 +277,7 @@ impl MutinyWallet {
 
         let mut mw_builder = MutinyWalletBuilder::new(xprivkey, storage).with_config(config);
         mw_builder.with_session_id(logger.session_id.clone());
+        mw_builder.with_logs(logger.get_memory_logs()?);
         if let Some(cb) = ln_event_callback {
             mw_builder.with_ln_event_callback(cb);
         }
