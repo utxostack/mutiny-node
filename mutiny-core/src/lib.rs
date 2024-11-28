@@ -1597,9 +1597,24 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
         node_manager.stop().await?;
 
+        // store wallet
+        {
+            log_trace!(self.logger, "save wallet state");
+            let mut wallet = node_manager
+                .wallet
+                .wallet
+                .try_write()
+                .map_err(|_| MutinyError::WalletOperationFailed)?;
+            if let Some(changeset) = wallet.take_staged() {
+                node_manager.storage.write_changes(&changeset)?;
+            }
+        }
+
+        log_trace!(self.logger, "release device lock");
         // stop device lock
         self.device_lock_stop_handle.stop().await;
 
+        log_trace!(self.logger, "stop logger");
         // stop logger
         self.logger.stop().await;
 
