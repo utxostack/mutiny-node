@@ -15,7 +15,6 @@ use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing};
 use bitcoin::{ScriptBuf, Transaction, TxOut};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
-use lightning::log_warn;
 use lightning::offers::invoice::UnsignedBolt12Invoice;
 use lightning::offers::invoice_request::UnsignedInvoiceRequest;
 use lightning::sign::{
@@ -24,6 +23,7 @@ use lightning::sign::{
     SpendableOutputDescriptor,
 };
 use lightning::util::logger::Logger;
+use lightning::{log_error, log_warn};
 use lightning_invoice::RawBolt11Invoice;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -184,10 +184,20 @@ impl<S: MutinyStorage> SignerProvider for PhantomKeysManager<S> {
 
     fn get_destination_script(&self, _channel_keys_id: [u8; 32]) -> Result<ScriptBuf, ()> {
         let mut wallet = self.wallet.wallet.try_write().map_err(|_| ())?;
-        Ok(wallet
+        let script = wallet
             .reveal_next_address(KeychainKind::External)
             .address
-            .script_pubkey())
+            .script_pubkey();
+        if let Some(changeset) = wallet.take_staged() {
+            if let Err(err) = self.wallet.storage.write_changes(&changeset) {
+                log_error!(
+                    self.logger,
+                    "Signer failed to reveal destination script: {err:?}"
+                );
+                return Err(());
+            }
+        }
+        Ok(script)
     }
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
@@ -196,6 +206,15 @@ impl<S: MutinyStorage> SignerProvider for PhantomKeysManager<S> {
             .reveal_next_address(KeychainKind::External)
             .address
             .script_pubkey();
+        if let Some(changeset) = wallet.take_staged() {
+            if let Err(err) = self.wallet.storage.write_changes(&changeset) {
+                log_error!(
+                    self.logger,
+                    "Signer failed to reveal shutdown script: {err:?}"
+                );
+                return Err(());
+            }
+        }
         ShutdownScript::try_from(script).map_err(|_| ())
     }
 }
