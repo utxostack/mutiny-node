@@ -255,6 +255,18 @@ impl<S: MutinyStorage> EventHandler<S> {
             } => {
                 log_debug!(self.logger, "EVENT: PaymentReceived received payment from payment hash {} of {amount_msat} millisatoshis to {receiver_node_id:?}", payment_hash);
 
+                if let Some(payment_info) =
+                    read_payment_info(&self.persister.storage, &payment_hash.0, true, &self.logger)
+                {
+                    if matches!(
+                        payment_info.status,
+                        HTLCStatus::Succeeded | HTLCStatus::Failed
+                    ) {
+                        self.channel_manager.fail_htlc_backwards(&payment_hash);
+                        return Ok(());
+                    }
+                }
+
                 let expected_skimmed_fee_msat = self
                     .lsp_client
                     .as_ref()
@@ -265,6 +277,7 @@ impl<S: MutinyStorage> EventHandler<S> {
 
                 if counterparty_skimmed_fee_msat > expected_skimmed_fee_msat {
                     log_error!(self.logger, "ERROR: Payment with hash {} skimmed a fee of {} millisatoshis when we expected a fee of {} millisatoshis", payment_hash, counterparty_skimmed_fee_msat, expected_skimmed_fee_msat);
+                    self.channel_manager.fail_htlc_backwards(&payment_hash);
                     return Ok(());
                 }
 
@@ -276,11 +289,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                     PaymentPurpose::Bolt12OfferPayment { .. }
                     | PaymentPurpose::Bolt12RefundPayment { .. } => {
                         log_error!(self.logger, "Not support Bolt12");
+                        self.channel_manager.fail_htlc_backwards(&payment_hash);
                         return Ok(());
                     }
                 } {
                     self.channel_manager.claim_funds(payment_preimage);
                 } else {
+                    self.channel_manager.fail_htlc_backwards(&payment_hash);
                     log_error!(self.logger, "ERROR: No payment preimage found");
                 };
             }
