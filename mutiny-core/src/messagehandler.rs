@@ -39,6 +39,23 @@ pub enum CommonLnEvent {
         // this must only be used to report debugging information.
         maybe_force_closed: bool,
     },
+    // Sent payment
+    PaymentSent {
+        payment_hash: String,
+    },
+    // Sent payment failed
+    PaymentFailed {
+        payment_hash: String,
+        reason: Option<String>,
+    },
+    // Received payment
+    PaymentClaimed {
+        /// The node that received the payment.
+        receiver_node_id: Option<String>,
+        /// The payment hash of the payment.
+        payment_hash: String,
+        amount_msat: u64,
+    },
 }
 
 #[derive(Clone)]

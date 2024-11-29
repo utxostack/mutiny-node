@@ -365,6 +365,15 @@ impl<S: MutinyStorage> EventHandler<S> {
                         }
                     }
                 }
+
+                if let Some(cb) = self.ln_event_callback.as_ref() {
+                    let event = CommonLnEvent::PaymentClaimed {
+                        receiver_node_id: receiver_node_id.map(|node_id| format!("{node_id}")),
+                        amount_msat,
+                        payment_hash: format!("{payment_hash:x}"),
+                    };
+                    cb.trigger(event);
+                }
             }
             Event::PaymentSent {
                 payment_preimage,
@@ -405,6 +414,12 @@ impl<S: MutinyStorage> EventHandler<S> {
                             "WARN: payment succeeded but we did not have it stored"
                         );
                     }
+                }
+                if let Some(cb) = self.ln_event_callback.as_ref() {
+                    let event = CommonLnEvent::PaymentSent {
+                        payment_hash: format!("{payment_hash:x}"),
+                    };
+                    cb.trigger(event);
                 }
             }
             Event::OpenChannelRequest {
@@ -524,6 +539,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                                 "WARN: payment failed but we did not have it stored"
                             );
                         }
+                    }
+                    if let Some(cb) = self.ln_event_callback.as_ref() {
+                        let event = CommonLnEvent::PaymentFailed {
+                            payment_hash: format!("{payment_hash:x}"),
+                            reason: reason.map(|r| format!("{r:?}")),
+                        };
+                        cb.trigger(event);
                     }
                 }
             }
