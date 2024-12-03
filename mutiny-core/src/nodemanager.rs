@@ -1725,10 +1725,10 @@ impl<S: MutinyStorage> NodeManager<S> {
                     };
                     if let Some(feerate_pkw) = target_feerate_sats_per_1000_weight {
                         let estimate_fee: u64 = ((close_tx_weight * feerate_pkw) / 1000).into();
-                        if estimate_fee > (initiator_balance >> 1) {
+                        if estimate_fee > (initiator_balance * 8 / 10) {
                             log_warn!(
                                 self.logger,
-                                "close channel with feerate_pkw({feerate_pkw}) close_tx_weight({close_tx_weight}) estimate fee({estimate_fee}) is more than 50% initiator balance ({initiator_balance})",
+                                "close channel with feerate_pkw({feerate_pkw}) close_tx_weight({close_tx_weight}) estimate fee({estimate_fee}) is more than 80% initiator balance ({initiator_balance})",
                             );
                             return Err(MutinyError::InvalidFeerate);
                         }
