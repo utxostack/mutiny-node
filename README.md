@@ -82,3 +82,7 @@ To run the local tests you can simply use
 just test
 ```
 
+## Acknowledgments
+
+This project was initially forked from [mutiny-node](https://github.com/MutinyWallet/mutiny-node). We are grateful for the solid work done by the original contributors.
+
