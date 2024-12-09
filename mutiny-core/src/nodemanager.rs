@@ -34,7 +34,9 @@ use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::Xpriv;
 use bitcoin::blockdata::script;
 use bitcoin::hashes::hex::FromHex;
+use bitcoin::psbt::Input;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Weight;
 use bitcoin::{Address, Network, OutPoint, Transaction, Txid};
 use esplora_client::{AsyncClient, Builder};
 use futures::future::join_all;
@@ -737,10 +739,95 @@ impl<S: MutinyStorage> NodeManager<S> {
         fee_rate: Option<u64>,
     ) -> Result<Txid, MutinyError> {
         log_trace!(self.logger, "calling sweep_wallet");
-        let res = self.wallet.sweep(send_to, labels, fee_rate).await;
+        let res = self
+            .wallet
+            .sweep(send_to.script_pubkey(), labels, fee_rate)
+            .await;
         log_trace!(self.logger, "calling sweep_wallet");
 
         res
+    }
+
+    /// Sweeps all the funds from the wallet to the given address using a foreign UTXO.
+    /// The fee rate is in sat/vbyte.
+    ///
+    /// If a fee rate is not provided, one will be used from the fee estimator.
+    ///
+    /// # Arguments
+    /// * `send_to` - The address to send funds to
+    /// * `out_point` - The outpoint of the foreign UTXO to include
+    /// * `psbt_input` - The PSBT input containing details about the foreign UTXO
+    /// * `satisfaction_weight` - The weight of the input's satisfaction (signature + witness data)
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction ID of the broadcast transaction
+    ///
+    /// # Errors
+    /// Returns `MutinyError` if transaction creation, signing, or broadcast fails
+    pub async fn sweep_wallet_with_foreign_utxo(
+        &self,
+        send_to: Address,
+        out_point: OutPoint,
+        psbt_input: Input,
+        satisfaction_weight: Weight,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Txid, MutinyError> {
+        log_trace!(self.logger, "calling sweep_wallet_with_foreign_utxo");
+        let res = self
+            .wallet
+            .sweep_with_foreign_utxo(
+                send_to.script_pubkey(),
+                out_point,
+                psbt_input,
+                satisfaction_weight,
+                fee_rate,
+                allow_dust,
+            )
+            .await;
+        log_trace!(self.logger, "calling sweep_wallet_with_foreign_utxo");
+
+        res
+    }
+
+    /// Creates and extracts a sweep transaction that sends all available funds to the given address.
+    /// This transaction will be signed but not broadcast.
+    ///
+    /// # Arguments
+    /// * `destination_address` - The address to send funds to
+    /// * `out_point` - The outpoint of the foreign UTXO to include
+    /// * `psbt_input` - The PSBT input containing details about the foreign UTXO
+    /// * `satisfaction_weight` - The weight of the input's satisfaction (signature + witness data)
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction serialized as a hex string
+    ///
+    /// # Errors
+    /// Returns `MutinyError::WalletOperationFailed` if transaction creation fails
+    pub async fn create_and_extract_sweep_tx(
+        &self,
+        destination_address: Address,
+        out_point: OutPoint,
+        psbt_input: Input,
+        satisfaction_weight: Weight,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyError> {
+        log_trace!(self.logger, "calling create_and_extract_sweep_tx");
+        let tx = self.wallet.create_and_extract_sweep_tx(
+            destination_address.script_pubkey(),
+            out_point,
+            psbt_input,
+            satisfaction_weight,
+            fee_rate,
+            allow_dust,
+        )?;
+        log_trace!(self.logger, "calling create_and_extract_sweep_tx");
+        Ok(bitcoin::consensus::encode::serialize_hex(&tx))
     }
 
     /// Estimates the onchain fee for a transaction sending to the given address.
@@ -760,14 +847,14 @@ impl<S: MutinyStorage> NodeManager<S> {
         res
     }
 
-    // /// Estimates the onchain fee for a transaction sweep our on-chain balance
-    // /// to the given address.
-    // ///
-    // /// The fee rate is in sat/vbyte.
+    /// Estimates the onchain fee for a transaction sweep our on-chain balance
+    /// to the given address.
+    ///
+    /// The fee rate is in sat/vbyte.
     // pub(crate) fn estimate_sweep_tx_fee(
     //     &self,
     //     destination_address: Address,
-    //     fee_rate: Option<f32>,
+    //     fee_rate: Option<u64>,
     // ) -> Result<u64, MutinyError> {
     //     self.wallet
     //         .estimate_sweep_tx_fee(destination_address.script_pubkey(), fee_rate)

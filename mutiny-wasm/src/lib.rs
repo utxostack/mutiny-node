@@ -472,6 +472,73 @@ impl MutinyWallet {
             .to_string())
     }
 
+    /// Sweeps all the funds from the wallet to the given address.
+    /// The fee rate is in sat/vbyte.
+    ///
+    /// If a fee rate is not provided, one will be used from the fee estimator.
+    ///
+    /// # Arguments
+    /// * `destination_address` - The address to send funds to
+    /// * `psbt_hex` - The PSBT in hex format containing the foreign UTXO
+    /// * `vout` - The output index of the foreign UTXO in the PSBT
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction ID of the broadcast transaction
+    ///
+    /// # Errors
+    /// Returns `MutinyJsError` if transaction creation, signing, or broadcast fails
+    #[wasm_bindgen]
+    pub async fn sweep_wallet_with_foreign_utxo(
+        &self,
+        destination_address: String,
+        psbt_hex: String,
+        vout: u32,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyJsError> {
+        let send_to =
+            Address::from_str(&destination_address)?.require_network(self.inner.get_network())?;
+        Ok(self
+            .inner
+            .sweep_wallet_with_foreign_utxo(send_to, psbt_hex, vout, fee_rate, allow_dust)
+            .await?
+            .to_string())
+    }
+
+    /// Creates and extracts a sweep transaction that sends all available funds to the given address.
+    /// This transaction will be signed but not broadcast.
+    ///
+    /// # Arguments
+    /// * `destination_address` - The address to send funds to
+    /// * `psbt_hex` - The PSBT in hex format containing the foreign UTXO
+    /// * `vout` - The output index of the foreign UTXO in the PSBT
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The serialized signed transaction ready for broadcast
+    ///
+    /// # Errors
+    /// Returns `MutinyJsError` if transaction creation or signing fails
+    #[wasm_bindgen]
+    pub async fn create_and_extract_sweep_tx(
+        &self,
+        destination_address: String,
+        psbt_hex: String,
+        vout: u32,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyJsError> {
+        let send_to =
+            Address::from_str(&destination_address)?.require_network(self.inner.get_network())?;
+        Ok(self
+            .inner
+            .create_and_extract_sweep_tx(send_to, psbt_hex, vout, fee_rate, allow_dust)
+            .await?)
+    }
+
     /// Estimates the onchain fee for a transaction sending to the given address.
     /// The amount is in satoshis and the fee rate is in sat/vbyte.
     pub async fn estimate_tx_fee(

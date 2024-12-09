@@ -63,10 +63,12 @@ use crate::{
 use bdk_chain::ConfirmationTime;
 use bip39::Mnemonic;
 pub use bitcoin;
+use bitcoin::psbt::Input;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{bip32::Xpriv, Transaction};
 use bitcoin::{hashes::sha256, Network, Txid};
 use bitcoin::{hashes::Hash, Address};
+use bitcoin::{OutPoint, Psbt, TxOut, Weight};
 
 use futures_util::lock::Mutex;
 use hex_conservative::{DisplayHex, FromHex};
@@ -1277,6 +1279,177 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             Err(MutinyError::InsufficientBalance)
         };
         log_trace!(self.logger, "finished calling sweep_wallet");
+
+        res
+    }
+
+    /// Parses a PSBT hex string and extracts the output point, input data, and weight.
+    /// Used for creating transactions that spend from a PSBT output.
+    ///
+    /// # Arguments
+    /// * `psbt_hex` - The PSBT in hex string format
+    /// * `vout` - The output index to extract from the PSBT
+    ///
+    /// # Returns
+    /// Returns a tuple containing:
+    /// * The outpoint (txid + vout) identifying the UTXO
+    /// * The PSBT input data needed to spend this output
+    /// * The weight of the transaction
+    fn extract_psbt_output_data(
+        &self,
+        psbt_hex: String,
+        vout: u32,
+    ) -> Result<(OutPoint, Input, Weight), MutinyError> {
+        let psbt = Psbt::from_str(&psbt_hex).map_err(|_| MutinyError::InvalidBtcPsbtOrVout)?;
+        let tx = psbt.clone().extract_tx()?;
+
+        let satisfaction_weight = tx.weight();
+
+        let out_point = OutPoint {
+            txid: tx.compute_txid(),
+            vout,
+        };
+        let output = psbt
+            .outputs
+            .get(vout as usize)
+            .ok_or(MutinyError::InvalidBtcPsbtOrVout)?;
+        let tx_out: &TxOut = tx
+            .output
+            .get(vout as usize)
+            .ok_or(MutinyError::InvalidBtcPsbtOrVout)?;
+        let is_segwit = output
+            .witness_script
+            .clone()
+            .map_or(false, |s| s.is_p2wpkh() || s.is_p2wsh());
+        let (non_witness_utxo, witness_utxo) = if is_segwit {
+            (None, Some(tx_out.to_owned()))
+        } else {
+            (Some(tx.clone()), None)
+        };
+
+        let psbt_input = Input {
+            non_witness_utxo,
+            witness_utxo,
+            witness_script: output.witness_script.clone(),
+            redeem_script: output.redeem_script.clone(),
+            bip32_derivation: output.bip32_derivation.clone(),
+            tap_internal_key: output.tap_internal_key,
+            tap_key_origins: output.tap_key_origins.clone(),
+            proprietary: output.proprietary.clone(),
+            ..Default::default()
+        };
+        Ok((out_point, psbt_input, satisfaction_weight))
+    }
+
+    /// Sweeps all the funds from the wallet to the given address using a foreign UTXO.
+    /// The fee rate is in sat/vbyte.
+    ///
+    /// If a fee rate is not provided, one will be used from the fee estimator.
+    ///
+    /// # Arguments
+    /// * `send_to` - The address to send funds to
+    /// * `psbt_hex` - The PSBT in hex format containing the foreign UTXO
+    /// * `vout` - The output index of the foreign UTXO in the PSBT
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction ID of the broadcast transaction
+    ///
+    /// # Errors
+    /// Returns `MutinyError` if transaction creation, signing, or broadcast fails
+    pub async fn sweep_wallet_with_foreign_utxo(
+        &self,
+        send_to: Address,
+        psbt_hex: String,
+        vout: u32,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Txid, MutinyError> {
+        log_trace!(self.logger, "calling sweep_wallet_with_foreign_utxo");
+
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let (out_point, psbt_input, satisfaction_weight) =
+            self.extract_psbt_output_data(psbt_hex, vout)?;
+
+        let b = node_manager.get_balance().await?;
+        let res = if b.confirmed + b.unconfirmed + b.closing > 0 {
+            let res = node_manager
+                .sweep_wallet_with_foreign_utxo(
+                    send_to.clone(),
+                    out_point,
+                    psbt_input,
+                    satisfaction_weight,
+                    fee_rate,
+                    allow_dust,
+                )
+                .await?;
+
+            Ok(res)
+        } else {
+            log_error!(self.logger, "node manager doesn't have a balance");
+            Err(MutinyError::InsufficientBalance)
+        };
+        log_trace!(
+            self.logger,
+            "finished calling sweep_wallet_with_foreign_utxo"
+        );
+
+        res
+    }
+
+    /// Creates and extracts a sweep transaction that sends all available funds to the given address.
+    /// This transaction will be signed but not broadcast.
+    ///
+    /// If a fee rate is not provided, one will be used from the fee estimator.
+    ///
+    /// # Arguments
+    /// * `send_to` - The address to send funds to
+    /// * `psbt_hex` - The PSBT in hex format containing the foreign UTXO
+    /// * `vout` - The output index of the foreign UTXO in the PSBT
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction serialized hex string of the broadcast transaction
+    ///
+    /// # Errors
+    /// Returns `MutinyError` if transaction creation fails
+    pub async fn create_and_extract_sweep_tx(
+        &self,
+        send_to: Address,
+        psbt_hex: String,
+        vout: u32,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyError> {
+        log_trace!(self.logger, "calling create_and_extract_sweep_tx");
+
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+
+        let (out_point, psbt_input, satisfaction_weight) =
+            self.extract_psbt_output_data(psbt_hex, vout)?;
+
+        let b = node_manager.get_balance().await?;
+        let res = if b.confirmed + b.unconfirmed + b.closing > 0 {
+            let res = node_manager
+                .create_and_extract_sweep_tx(
+                    send_to.clone(),
+                    out_point,
+                    psbt_input,
+                    satisfaction_weight,
+                    fee_rate,
+                    allow_dust,
+                )
+                .await?;
+
+            Ok(res)
+        } else {
+            log_error!(self.logger, "node manager doesn't have a balance");
+            Err(MutinyError::InsufficientBalance)
+        };
+        log_trace!(self.logger, "finished calling create_and_extract_sweep_tx");
 
         res
     }

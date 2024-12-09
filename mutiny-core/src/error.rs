@@ -117,6 +117,12 @@ pub enum MutinyError {
     /// A wallet operation failed.
     #[error("Failed to conduct wallet operation.")]
     WalletOperationFailed,
+    /// Add a foreign utxo failed.
+    #[error("Failed to add foreign utxo.")]
+    AddForeignUtxoFailed,
+    /// BTC PSBT hex or vout invalid
+    #[error("Invalid BTC PSBT or Vout.")]
+    InvalidBtcPsbtOrVout,
     /// A signing operation failed.
     #[error("Failed to sign given transaction.")]
     WalletSigningFailed,

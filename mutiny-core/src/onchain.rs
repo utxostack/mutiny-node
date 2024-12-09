@@ -18,7 +18,7 @@ use bdk_wallet::{
 use bitcoin::bip32::{ChildNumber, DerivationPath, Xpriv};
 use bitcoin::consensus::serialize;
 use bitcoin::psbt::{Input, Psbt};
-use bitcoin::{Address, Amount, Network, OutPoint, ScriptBuf, Transaction, Txid};
+use bitcoin::{Address, Amount, Network, OutPoint, ScriptBuf, Transaction, Txid, Weight};
 use esplora_client::AsyncClient;
 use hex_conservative::DisplayHex;
 use lightning::events::bump_transaction::{Utxo, WalletSource};
@@ -665,13 +665,109 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         Ok(psbt)
     }
 
+    /// Creates a PSBT that sweeps all available funds plus a foreign UTXO to the given script pubkey.
+    /// This transaction will be signed but not broadcast.
+    ///
+    /// # Arguments
+    /// * `spk` - The script pubkey to send funds to
+    /// * `out_point` - The outpoint of the foreign UTXO to include
+    /// * `psbt_input` - The PSBT input containing details about the foreign UTXO
+    /// * `satisfaction_weight` - The weight of the input's satisfaction (signature + witness data)
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The signed PSBT ready for extraction
+    ///
+    /// # Errors
+    /// Returns `MutinyError::WalletOperationFailed` if transaction creation fails
+    /// Returns `MutinyError::AddForeignUtxoFailed` if adding the foreign UTXO fails
+    /// Returns `MutinyError::InvalidFeerate` if the fee rate is invalid
+    pub(crate) fn create_sweep_psbt_with_foreign_utxo(
+        &self,
+        spk: ScriptBuf,
+        out_point: OutPoint,
+        psbt_input: Input,
+        satisfaction_weight: Weight,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Psbt, MutinyError> {
+        let mut wallet = self.wallet.try_write()?;
+        let fee_rate = if let Some(rate) = fee_rate {
+            FeeRate::from_sat_per_vb(rate).ok_or_else(|| MutinyError::InvalidFeerate)?
+        } else {
+            let sat_per_kwu = self.fees.get_normal_fee_rate();
+            FeeRate::from_sat_per_kwu(sat_per_kwu.into())
+        };
+        let psbt = {
+            let mut builder = wallet.build_tx();
+            builder
+                .drain_wallet()
+                .add_foreign_utxo(out_point, psbt_input, satisfaction_weight)
+                .map_err(|_| MutinyError::AddForeignUtxoFailed)? // Spend all outputs in this wallet.
+                .drain_to(spk)
+                .enable_rbf()
+                .allow_dust(allow_dust.unwrap_or_default())
+                .fee_rate(fee_rate);
+            builder.finish()?
+        };
+        Ok(psbt)
+    }
+
+    /// Sweeps all available funds plus a foreign UTXO to the given script pubkey.
+    /// The transaction will be signed and broadcast.
+    ///
+    /// # Arguments
+    /// * `spk` - The script pubkey to send funds to
+    /// * `out_point` - The outpoint of the foreign UTXO to include
+    /// * `psbt_input` - The PSBT input containing details about the foreign UTXO
+    /// * `satisfaction_weight` - The weight of the input's satisfaction (signature + witness data)
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The transaction ID of the broadcast transaction
+    ///
+    /// # Errors
+    /// Returns `MutinyError::WalletOperationFailed` if transaction creation fails
+    /// Returns `MutinyError::AddForeignUtxoFailed` if adding the foreign UTXO fails
+    /// Returns `MutinyError::InvalidFeerate` if the fee rate is invalid
+    /// Returns `MutinyError::ChainAccessFailed` if broadcasting fails
+    pub async fn sweep_with_foreign_utxo(
+        &self,
+        spk: ScriptBuf,
+        out_point: OutPoint,
+        psbt_input: Input,
+        satisfaction_weight: Weight,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Txid, MutinyError> {
+        let psbt = self.create_sweep_psbt_with_foreign_utxo(
+            spk,
+            out_point,
+            psbt_input,
+            satisfaction_weight,
+            fee_rate,
+            allow_dust,
+        )?;
+        let labels = vec!["sweep".to_string()];
+        self.label_psbt(&psbt, labels)?;
+
+        let raw_transaction = psbt.extract_tx()?;
+        let txid = raw_transaction.compute_txid();
+
+        self.broadcast_transaction(raw_transaction).await?;
+        log_debug!(self.logger, "Transaction broadcast! TXID: {txid}");
+        Ok(txid)
+    }
+
     pub async fn sweep(
         &self,
-        destination_address: Address,
+        spk: ScriptBuf,
         labels: Vec<String>,
         fee_rate: Option<u64>,
     ) -> Result<Txid, MutinyError> {
-        let psbt = self.create_sweep_psbt(destination_address.script_pubkey(), fee_rate)?;
+        let psbt = self.create_sweep_psbt(spk, fee_rate)?;
         self.label_psbt(&psbt, labels)?;
 
         let raw_transaction = psbt.extract_tx()?;
@@ -732,6 +828,44 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         psbt.fee_amount()
             .map(|amount| amount.to_sat())
             .ok_or(MutinyError::WalletOperationFailed)
+    }
+
+    /// Creates and extracts a sweep transaction that sends all available funds to the given address.
+    /// This transaction will be signed but not broadcast.
+    ///
+    /// # Arguments
+    /// * `spk` - The script pubkey to send funds to
+    /// * `out_point` - The outpoint of the foreign UTXO to include
+    /// * `psbt_input` - The PSBT input containing details about the foreign UTXO
+    /// * `virtual_bytes` - The virtual size in bytes of the foreign UTXO
+    /// * `fee_rate` - Optional fee rate in sats/vbyte. If None, will use default fee estimation
+    /// * `allow_dust` - Optional flag to allow dust outputs. Defaults to false
+    ///
+    /// # Returns
+    /// The signed transaction ready for broadcast
+    ///
+    /// # Errors
+    /// Returns `MutinyError::WalletOperationFailed` if transaction creation or signing fails
+    pub fn create_and_extract_sweep_tx(
+        &self,
+        spk: ScriptBuf,
+        out_point: OutPoint,
+        psbt_input: Input,
+        satisfaction_weight: Weight,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Transaction, MutinyError> {
+        let psbt = self.create_sweep_psbt_with_foreign_utxo(
+            spk,
+            out_point,
+            psbt_input,
+            satisfaction_weight,
+            fee_rate,
+            allow_dust,
+        )?;
+
+        psbt.extract_tx()
+            .map_err(|_| MutinyError::WalletOperationFailed)
     }
 
     /// Bumps the given transaction by replacing the given tx with a transaction at
