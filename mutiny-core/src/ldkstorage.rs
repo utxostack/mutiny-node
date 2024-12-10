@@ -3,6 +3,7 @@ use crate::fees::MutinyFeeEstimator;
 use crate::gossip::PROB_SCORER_KEY;
 use crate::keymanager::PhantomKeysManager;
 use crate::logging::MutinyLogger;
+use crate::messagehandler::BumpChannelClosureTransaction;
 use crate::node::Router;
 use crate::node::{default_user_config, ChainMonitor};
 use crate::nodemanager::ChannelClosure;
@@ -397,7 +398,8 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
             "{CHANNEL_CLOSURE_PREFIX}{}",
             user_channel_id.to_be_bytes().to_lower_hex_string()
         ));
-        self.storage.write_data(key.clone(), &closure, None)?;
+        self.storage
+            .write_data(key.clone(), &closure, Some(closure.timestamp as u32))?;
 
         let index = self.storage.activity_index();
         let mut index = index.try_write()?;
@@ -429,6 +431,28 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         map.into_iter()
             .map(|(key, mut closure)| closure.set_user_channel_id_from_key(&key).map(|_| closure))
             .collect::<Result<Vec<_>, _>>()
+    }
+
+    pub(crate) fn persist_channel_closure_bumping_event(
+        &self,
+        closure: &BumpChannelClosureTransaction,
+    ) -> Result<(), MutinyError> {
+        let key = self.get_key(&format!(
+            "{CHANNEL_CLOSURE_BUMP_PREFIX}{}",
+            closure.channel_id
+        ));
+        self.storage
+            .write_data(key.clone(), closure, Some(closure.timestamp as u32))?;
+
+        let index = self.storage.activity_index();
+        let mut index = index.try_write()?;
+        index.retain(|i| i.key != key); // remove old version
+        index.insert(IndexItem {
+            timestamp: Some(closure.timestamp),
+            key,
+        });
+
+        Ok(())
     }
 
     /// Persists the failed spendable outputs to storage.
