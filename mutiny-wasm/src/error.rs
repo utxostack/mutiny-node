@@ -104,6 +104,9 @@ pub enum MutinyJsError {
     /// User provided invalid mnemonic.
     #[error("Invalid mnemonic")]
     InvalidMnemonic,
+    /// Invalid BTC transaction or hex string.
+    #[error("Invalid BTC transaction")]
+    InvalidTransaction,
     /// A wallet operation failed.
     #[error("Failed to conduct wallet operation.")]
     WalletOperationFailed,
@@ -219,6 +222,7 @@ impl From<MutinyError> for MutinyJsError {
             MutinyError::SeedGenerationFailed => MutinyJsError::SeedGenerationFailed,
             MutinyError::WalletOperationFailed => MutinyJsError::WalletOperationFailed,
             MutinyError::InvalidMnemonic => MutinyJsError::InvalidMnemonic,
+            MutinyError::InvalidTransaction => MutinyJsError::InvalidTransaction,
             MutinyError::WalletSigningFailed => MutinyJsError::WalletSigningFailed,
             MutinyError::ChainAccessFailed => MutinyJsError::ChainAccessFailed,
             MutinyError::WalletSyncError => MutinyJsError::WalletSyncError,

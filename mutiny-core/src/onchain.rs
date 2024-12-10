@@ -633,6 +633,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         &self,
         spk: ScriptBuf,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<Psbt, MutinyError> {
         let mut wallet = self.wallet.try_write()?;
 
@@ -648,6 +649,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                 .drain_wallet() // Spend all outputs in this wallet.
                 .drain_to(spk)
                 .enable_rbf()
+                .allow_dust(allow_dust.unwrap_or_default())
                 .fee_rate(fee_rate);
             builder.finish()?
         };
@@ -670,8 +672,10 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         destination_address: Address,
         labels: Vec<String>,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<Txid, MutinyError> {
-        let psbt = self.create_sweep_psbt(destination_address.script_pubkey(), fee_rate)?;
+        let psbt =
+            self.create_sweep_psbt(destination_address.script_pubkey(), fee_rate, allow_dust)?;
         self.label_psbt(&psbt, labels)?;
 
         let raw_transaction = psbt.extract_tx()?;
@@ -726,12 +730,23 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         &self,
         spk: ScriptBuf,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<u64, MutinyError> {
-        let psbt = self.create_sweep_psbt(spk, fee_rate)?;
+        let psbt = self.create_sweep_psbt(spk, fee_rate, allow_dust)?;
 
         psbt.fee_amount()
             .map(|amount| amount.to_sat())
             .ok_or(MutinyError::WalletOperationFailed)
+    }
+
+    pub fn construct_sweep_tx(
+        &self,
+        spk: ScriptBuf,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Transaction, MutinyError> {
+        let psbt = self.create_sweep_psbt(spk, fee_rate, allow_dust)?;
+        Ok(psbt.extract_tx()?)
     }
 
     /// Bumps the given transaction by replacing the given tx with a transaction at

@@ -735,12 +735,26 @@ impl<S: MutinyStorage> NodeManager<S> {
         send_to: Address,
         labels: Vec<String>,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<Txid, MutinyError> {
         log_trace!(self.logger, "calling sweep_wallet");
-        let res = self.wallet.sweep(send_to, labels, fee_rate).await;
+        let res = self
+            .wallet
+            .sweep(send_to, labels, fee_rate, allow_dust)
+            .await;
         log_trace!(self.logger, "calling sweep_wallet");
 
         res
+    }
+
+    pub fn construct_sweep_tx(
+        &self,
+        send_to: Address,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<Transaction, MutinyError> {
+        self.wallet
+            .construct_sweep_tx(send_to.script_pubkey(), fee_rate, allow_dust)
     }
 
     /// Estimates the onchain fee for a transaction sending to the given address.
@@ -798,6 +812,7 @@ impl<S: MutinyStorage> NodeManager<S> {
     pub fn estimate_sweep_channel_open_fee(
         &self,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<u64, MutinyError> {
         log_trace!(self.logger, "calling estimate_sweep_channel_open_fee");
 
@@ -806,7 +821,9 @@ impl<S: MutinyStorage> NodeManager<S> {
             .push_int(0)
             .push_slice([0; 32])
             .into_script();
-        let res = self.wallet.estimate_sweep_tx_fee(script, fee_rate);
+        let res = self
+            .wallet
+            .estimate_sweep_tx_fee(script, fee_rate, allow_dust);
         log_trace!(self.logger, "calling estimate_sweep_channel_open_fee");
 
         res
@@ -910,6 +927,15 @@ impl<S: MutinyStorage> NodeManager<S> {
 
         log_trace!(self.logger, "finished calling check_address");
         Ok(details_opt.map(|(d, _)| d))
+    }
+
+    pub(crate) async fn insert_unconfirmed_tx(
+        &self,
+        tx: Transaction,
+        last_seen: u64,
+    ) -> Result<(), MutinyError> {
+        let confirmation_time = ConfirmationTime::Unconfirmed { last_seen };
+        self.wallet.insert_tx(tx, confirmation_time, None).await
     }
 
     /// Adds labels to the TransactionDetails based on the address labels.

@@ -462,14 +462,44 @@ impl MutinyWallet {
         destination_address: String,
         labels: Vec<String>,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<String, MutinyJsError> {
         let send_to =
             Address::from_str(&destination_address)?.require_network(self.inner.get_network())?;
         Ok(self
             .inner
-            .sweep_wallet(send_to, labels, fee_rate)
+            .sweep_wallet(send_to, labels, fee_rate, allow_dust)
             .await?
             .to_string())
+    }
+
+    /// Constructs a sweep transaction to move all funds from the wallet to the given address.
+    /// The fee rate is in sat/vbyte.
+    ///
+    /// If a fee rate is not provided, one will be used from the fee estimator.
+    #[wasm_bindgen]
+    pub async fn construct_sweep_tx(
+        &self,
+        destination_address: String,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyJsError> {
+        let send_to =
+            Address::from_str(&destination_address)?.require_network(self.inner.get_network())?;
+        Ok(self
+            .inner
+            .construct_sweep_tx(send_to, fee_rate, allow_dust)?)
+    }
+
+    /// Inserts an unconfirmed transaction into the wallet.
+    /// The transaction is provided as a hexadecimal string and the last seen time is in seconds.
+    #[wasm_bindgen]
+    pub async fn insert_unconfirmed_tx(
+        &self,
+        tx_hex: String,
+        last_seen: u64,
+    ) -> Result<(), MutinyJsError> {
+        Ok(self.inner.insert_unconfirmed_tx(tx_hex, last_seen).await?)
     }
 
     /// Estimates the onchain fee for a transaction sending to the given address.
@@ -501,10 +531,11 @@ impl MutinyWallet {
     pub fn estimate_sweep_channel_open_fee(
         &self,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<u64, MutinyJsError> {
         Ok(self
             .get_node_manager()?
-            .estimate_sweep_channel_open_fee(fee_rate)?)
+            .estimate_sweep_channel_open_fee(fee_rate, allow_dust)?)
     }
 
     /// Estimates the lightning fee for a transaction. Amount is either from the invoice
