@@ -195,7 +195,7 @@ impl MutinyWallet {
         ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
-        let logger = Arc::new(MutinyLogger::default());
+        let logger = Arc::new(MutinyLogger::memory_only());
 
         let cipher = password
             .as_ref()

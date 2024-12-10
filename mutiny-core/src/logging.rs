@@ -15,12 +15,21 @@ const MAX_LOG_ITEMS: usize = 10_000;
 #[derive(Clone)]
 pub struct MutinyLogger {
     pub session_id: String,
-    should_write_to_storage: bool,
+    should_write: bool,
+    should_persist: bool,
     memory_logs: Arc<Mutex<Vec<String>>>,
     stop_handle: Option<StopHandle>,
 }
 
 impl MutinyLogger {
+    pub fn memory_only() -> Self {
+        Self {
+            should_persist: false,
+            should_write: true,
+            ..Default::default()
+        }
+    }
+
     pub fn with_writer<S: MutinyStorage>(
         logging_db: S,
         session_id: Option<String>,
@@ -72,7 +81,8 @@ impl MutinyLogger {
 
         MutinyLogger {
             session_id: session_id.unwrap_or_else(gen_session_id),
-            should_write_to_storage: true,
+            should_write: true,
+            should_persist: true,
             memory_logs,
             stop_handle: Some(stop_handle),
         }
@@ -91,7 +101,7 @@ impl MutinyLogger {
         &self,
         storage: &S,
     ) -> Result<Option<Vec<String>>, MutinyError> {
-        if !self.should_write_to_storage {
+        if !self.should_write || !self.should_persist {
             return Ok(None);
         }
         get_logging_data(storage)
@@ -108,7 +118,8 @@ impl Default for MutinyLogger {
     fn default() -> Self {
         Self {
             session_id: gen_session_id(),
-            should_write_to_storage: Default::default(),
+            should_write: false,
+            should_persist: false,
             memory_logs: Arc::new(Mutex::new(vec![])),
             stop_handle: None,
         }
@@ -139,7 +150,7 @@ impl Logger for MutinyLogger {
             raw_log
         );
 
-        if self.should_write_to_storage && record.level >= Level::Trace {
+        if self.should_write && record.level >= Level::Trace {
             if let Ok(mut memory_logs) = self.memory_logs.lock() {
                 memory_logs.push(log.clone());
             } else {
