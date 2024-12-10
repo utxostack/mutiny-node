@@ -1,7 +1,7 @@
 use crate::ldkstorage::{MutinyNodePersister, PhantomChannelManager};
 use crate::logging::MutinyLogger;
 use crate::lsp::{AnyLsp, Lsp};
-use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
+use crate::messagehandler::{BumpChannelClosureTransaction, CommonLnEvent, CommonLnEventCallback};
 use crate::node::BumpTxEventHandler;
 use crate::nodemanager::ChannelClosure;
 use crate::onchain::OnChainWallet;
@@ -728,7 +728,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                         self.bump_tx_event_handler.handle_event(&event);
                     }
                     if let Some(cb) = self.ln_event_callback.as_ref() {
-                        cb.trigger(CommonLnEvent::BumpChannelCloseTransaction {
+                        let closure_bumping_event = BumpChannelClosureTransaction {
                             channel_id: format!("{channel_id}"),
                             txid,
                             hex_tx,
@@ -736,6 +736,22 @@ impl<S: MutinyStorage> EventHandler<S> {
                                 .duration_since(UNIX_EPOCH)
                                 .expect("current time must be greater than epoch anchor")
                                 .as_secs(),
+                        };
+
+                        if let Err(e) = self
+                            .persister
+                            .persist_channel_closure_bumping_event(&closure_bumping_event)
+                        {
+                            log_error!(
+                                self.logger,
+                                "Failed to persist channel closure bumping event: {e}"
+                            );
+                        }
+                        cb.trigger(CommonLnEvent::BumpChannelCloseTransaction {
+                            channel_id: closure_bumping_event.channel_id,
+                            txid: closure_bumping_event.txid,
+                            hex_tx: closure_bumping_event.hex_tx,
+                            timestamp: closure_bumping_event.timestamp,
                         });
                     }
                 }
