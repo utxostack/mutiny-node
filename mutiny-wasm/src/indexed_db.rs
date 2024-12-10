@@ -6,6 +6,7 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info};
 use log::error;
+use messagehandler::BumpChannelClosureTransaction;
 use mutiny_core::event::PaymentInfo;
 use mutiny_core::logging::MutinyLogger;
 use mutiny_core::logging::LOGGING_KEY;
@@ -17,6 +18,7 @@ use mutiny_core::{
     encrypt::Cipher,
     error::{MutinyError, MutinyStorageError},
 };
+use nodemanager::ChannelClosure;
 use rexie::{ObjectStore, Rexie, TransactionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -525,6 +527,70 @@ impl IndexedDbStorage {
                         None => {
                             let obj = vss.get_object(&kv.key).await?;
                             if serde_json::from_value::<PaymentInfo>(obj.value.clone()).is_ok() {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
+                } else if key.starts_with(CHANNEL_CLOSURE_PREFIX) {
+                    // we can get version from channel closure info, so we should compare
+                    match current.get_data::<ChannelClosure>(&kv.key)? {
+                        Some(closure) => {
+                            if (closure.timestamp as u32) < kv.version {
+                                let obj = vss.get_object(&kv.key).await?;
+                                if serde_json::from_value::<ChannelClosure>(obj.value.clone())
+                                    .is_ok()
+                                {
+                                    return Ok(Some((kv.key, obj.value)));
+                                }
+                            } else {
+                                log_debug!(
+                                    logger,
+                                    "Skipping vss key {} with version {}, current version is {}",
+                                    kv.key,
+                                    kv.version,
+                                    closure.timestamp
+                                );
+                                return Ok(None);
+                            }
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<ChannelClosure>(obj.value.clone()).is_ok() {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
+                } else if key.starts_with(CHANNEL_CLOSURE_BUMP_PREFIX) {
+                    // we can get version from channel closure bumping info, so we should compare
+                    match current.get_data::<BumpChannelClosureTransaction>(&kv.key)? {
+                        Some(closure) => {
+                            if (closure.timestamp as u32) < kv.version {
+                                let obj = vss.get_object(&kv.key).await?;
+                                if serde_json::from_value::<BumpChannelClosureTransaction>(
+                                    obj.value.clone(),
+                                )
+                                .is_ok()
+                                {
+                                    return Ok(Some((kv.key, obj.value)));
+                                }
+                            } else {
+                                log_debug!(
+                                    logger,
+                                    "Skipping vss key {} with version {}, current version is {}",
+                                    kv.key,
+                                    kv.version,
+                                    closure.timestamp
+                                );
+                                return Ok(None);
+                            }
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<BumpChannelClosureTransaction>(
+                                obj.value.clone(),
+                            )
+                            .is_ok()
+                            {
                                 return Ok(Some((kv.key, obj.value)));
                             }
                         }

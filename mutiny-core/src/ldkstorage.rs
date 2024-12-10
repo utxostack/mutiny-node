@@ -44,6 +44,7 @@ pub const CHANNEL_MANAGER_KEY: &str = "manager";
 pub const MONITORS_PREFIX_KEY: &str = "monitors/";
 const CHANNEL_OPENING_PARAMS_PREFIX: &str = "chan_open_params/";
 pub const CHANNEL_CLOSURE_PREFIX: &str = "channel_closure/";
+pub const CHANNEL_CLOSURE_BUMP_PREFIX: &str = "channel_closure_bump/";
 const FAILED_SPENDABLE_OUTPUT_DESCRIPTOR_KEY: &str = "failed_spendable_outputs";
 
 pub(crate) type PhantomChannelManager<S: MutinyStorage> = LdkChannelManager<

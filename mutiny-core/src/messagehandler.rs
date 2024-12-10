@@ -12,6 +12,14 @@ use serde::{Deserialize, Serialize};
 use crate::node::LiquidityManager;
 use crate::storage::MutinyStorage;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BumpChannelClosureTransaction {
+    pub channel_id: String,
+    pub txid: String,
+    pub hex_tx: String,
+    pub timestamp: u64,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum CommonLnEvent {
@@ -29,6 +37,7 @@ pub enum CommonLnEvent {
         channel_id: String,
         txid: String,
         hex_tx: String,
+        timestamp: u64,
     },
     ChannelClosed {
         channel_id: String,

@@ -23,6 +23,7 @@ use lightning_invoice::Bolt11Invoice;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PaymentInfo {
@@ -731,6 +732,10 @@ impl<S: MutinyStorage> EventHandler<S> {
                             channel_id: format!("{channel_id}"),
                             txid,
                             hex_tx,
+                            timestamp: SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .expect("current time must be greater than epoch anchor")
+                                .as_secs(),
                         });
                     }
                 }
