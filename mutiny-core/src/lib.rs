@@ -63,6 +63,7 @@ use crate::{
 use bdk_chain::ConfirmationTime;
 use bip39::Mnemonic;
 pub use bitcoin;
+use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{bip32::Xpriv, Transaction};
 use bitcoin::{hashes::sha256, Network, Txid};
@@ -1260,6 +1261,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         send_to: Address,
         labels: Vec<String>,
         fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
     ) -> Result<Txid, MutinyError> {
         log_trace!(self.logger, "calling sweep_wallet");
 
@@ -1268,7 +1270,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         let b = node_manager.get_balance().await?;
         let res = if b.confirmed + b.unconfirmed > 0 {
             let res = node_manager
-                .sweep_wallet(send_to.clone(), labels, fee_rate)
+                .sweep_wallet(send_to.clone(), labels, fee_rate, allow_dust)
                 .await?;
 
             Ok(res)
@@ -1279,6 +1281,36 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         log_trace!(self.logger, "finished calling sweep_wallet");
 
         res
+    }
+
+    pub fn construct_sweep_tx(
+        &self,
+        send_to: Address,
+        fee_rate: Option<u64>,
+        allow_dust: Option<bool>,
+    ) -> Result<String, MutinyError> {
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+        let tx = node_manager.construct_sweep_tx(send_to, fee_rate, allow_dust)?;
+        Ok(serialize_hex(&tx))
+    }
+
+    pub async fn insert_unconfirmed_tx(
+        &self,
+        tx_hex: String,
+        last_seen: u64,
+    ) -> Result<(), MutinyError> {
+        log_trace!(self.logger, "calling insert_unconfirmed_tx");
+
+        let node_manager = self.node_manager.as_ref().ok_or(MutinyError::NotRunning)?;
+        let tx_bytes = Vec::from_hex(&tx_hex).map_err(|_| MutinyError::InvalidTransaction)?;
+        let tx = bitcoin::consensus::deserialize::<bitcoin::Transaction>(&tx_bytes)
+            .map_err(|_| MutinyError::InvalidTransaction)?;
+
+        node_manager.insert_unconfirmed_tx(tx, last_seen).await?;
+
+        log_trace!(self.logger, "finished calling insert_unconfirmed_tx");
+
+        Ok(())
     }
 
     pub async fn create_address(

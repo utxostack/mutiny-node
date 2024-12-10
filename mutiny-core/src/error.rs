@@ -114,6 +114,9 @@ pub enum MutinyError {
     /// User provided invalid mnemonic.
     #[error("Invalid mnemonic")]
     InvalidMnemonic,
+    /// Invalid BTC transaction or hex string.
+    #[error("Invalid BTC transaction")]
+    InvalidTransaction,
     /// A wallet operation failed.
     #[error("Failed to conduct wallet operation.")]
     WalletOperationFailed,
