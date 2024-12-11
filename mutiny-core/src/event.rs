@@ -6,7 +6,7 @@ use crate::node::BumpTxEventHandler;
 use crate::nodemanager::ChannelClosure;
 use crate::onchain::OnChainWallet;
 use crate::storage::MutinyStorage;
-use crate::utils::sleep;
+use crate::utils::{self, sleep};
 use crate::{fees::MutinyFeeEstimator, storage::read_payment_info, PrivacyLevel};
 use crate::{keymanager::PhantomKeysManager, storage::persist_payment_info};
 use anyhow::anyhow;
@@ -23,7 +23,6 @@ use lightning_invoice::Bolt11Invoice;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PaymentInfo {
@@ -714,11 +713,13 @@ impl<S: MutinyStorage> EventHandler<S> {
                 } => {
                     let txid = format!("{:x}", commitment_tx.compute_txid());
                     let hex_tx = bitcoin::consensus::encode::serialize_hex(commitment_tx);
+                    let timestamp = utils::now().as_secs();
                     log_debug!(
                         self.logger,
-                        "EVENT: BumpTransaction channel_id {} tx_id {}\nhex_tx {}",
+                        "EVENT: BumpTransaction channel_id {} tx_id {} timestamp {}\nhex_tx {}",
                         channel_id,
                         txid,
+                        timestamp,
                         hex_tx
                     );
                     if self.do_not_bump_channel_closed_tx {
@@ -732,10 +733,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                             channel_id: format!("{channel_id}"),
                             txid,
                             hex_tx,
-                            timestamp: SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .expect("current time must be greater than epoch anchor")
-                                .as_secs(),
+                            timestamp,
                         };
 
                         if let Err(e) = self
@@ -751,7 +749,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                             channel_id: closure_bumping_event.channel_id,
                             txid: closure_bumping_event.txid,
                             hex_tx: closure_bumping_event.hex_tx,
-                            timestamp: closure_bumping_event.timestamp,
+                            timestamp,
                         });
                     }
                 }
