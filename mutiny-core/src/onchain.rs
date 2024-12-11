@@ -36,7 +36,8 @@ use crate::utils::{now, sleep};
 use crate::TransactionDetails;
 
 pub(crate) const FULL_SYNC_STOP_GAP: usize = 150;
-pub(crate) const RESTORE_SYNC_STOP_GAP: usize = 20;
+pub(crate) const RESTORE_SYNC_STOP_GAP: usize = 50;
+const PARALLEL_REQUESTS: usize = 10;
 
 #[derive(Clone)]
 pub struct OnChainWallet<S: MutinyStorage> {
@@ -207,7 +208,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             self.storage.delete(&[NEED_FULL_SYNC_KEY])?;
         }
         // get first wallet lock that only needs to read
-        let (spks, txids) = {
+        let (spks, txids, chain_tip) = {
             if let Ok(wallet) = self.wallet.try_read() {
                 let spk_vec = wallet
                     .spk_index()
@@ -216,16 +217,16 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                     .collect::<Vec<_>>();
 
                 let chain = wallet.local_chain();
-                let chain_tip = chain.tip().block_id();
+                let chain_tip = chain.tip();
 
                 let unconfirmed_txids = wallet
                     .tx_graph()
-                    .list_canonical_txs(chain, chain_tip)
+                    .list_canonical_txs(chain, chain_tip.block_id())
                     .filter(|canonical_tx| !canonical_tx.chain_position.is_confirmed())
                     .map(|canonical_tx| canonical_tx.tx_node.txid)
                     .collect::<Vec<Txid>>();
 
-                (spk_vec, unconfirmed_txids)
+                (spk_vec, unconfirmed_txids, chain_tip)
             } else {
                 log_error!(self.logger, "Could not get wallet lock to sync");
                 return Err(MutinyError::WalletOperationFailed);
@@ -237,7 +238,13 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             chain_update,
         } = self
             .blockchain
-            .sync(SyncRequestBuilder::default().spks(spks).txids(txids), 5)
+            .sync(
+                SyncRequestBuilder::default()
+                    .spks(spks)
+                    .txids(txids)
+                    .chain_tip(chain_tip),
+                PARALLEL_REQUESTS,
+            )
             .await?;
         let update = Update {
             tx_update,
@@ -280,7 +287,10 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             tx_update,
             last_active_indices,
             chain_update,
-        } = self.blockchain.full_scan(request_builder, gap, 5).await?;
+        } = self
+            .blockchain
+            .full_scan(request_builder, gap, PARALLEL_REQUESTS)
+            .await?;
         let update = Update {
             last_active_indices,
             tx_update,
