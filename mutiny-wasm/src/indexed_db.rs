@@ -778,6 +778,7 @@ impl MutinyStorage for IndexedDbStorage {
     }
 
     async fn start(&mut self) -> Result<(), MutinyError> {
+        log_debug!(self.logger, "starting storage");
         let indexed_db = if self.indexed_db.try_read()?.0.is_none() {
             Arc::new(RwLock::new(RexieContainer(Some(
                 Self::build_indexed_db_database().await?,
@@ -797,6 +798,7 @@ impl MutinyStorage for IndexedDbStorage {
         let memory = Arc::new(RwLock::new(map));
         self.indexed_db = indexed_db;
         self.memory = memory;
+        log_debug!(self.logger, "started storage");
         Ok(())
     }
 
@@ -816,6 +818,7 @@ impl MutinyStorage for IndexedDbStorage {
     }
 
     async fn stop(&self) {
+        log_debug!(self.logger, "stopping storage");
         // Wait all back ground tasks
         self.tasks.wait().await;
 
@@ -825,6 +828,7 @@ impl MutinyStorage for IndexedDbStorage {
                 indexed_db.close();
             }
         }
+        log_debug!(self.logger, "stopped storage");
     }
 
     fn connected(&self) -> Result<bool, MutinyError> {
