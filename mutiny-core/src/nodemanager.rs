@@ -1008,6 +1008,11 @@ impl<S: MutinyStorage> NodeManager<S> {
         log_trace!(self.logger, "calling get_balance");
 
         let onchain = if let Ok(wallet) = self.wallet.wallet.try_read() {
+            log_debug!(
+                self.logger,
+                "Calling get_balance, the tx_graph: ({:?})",
+                wallet.tx_graph()
+            );
             wallet.balance()
         } else {
             log_error!(self.logger, "Could not get wallet lock to get balance");

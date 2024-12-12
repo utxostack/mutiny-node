@@ -2,7 +2,7 @@ cargo-features = ["per-package-target"]
 
 [package]
 name = "mutiny-wasm"
-version = "1.10.21-rc0"
+version = "1.10.21-rc1"
 edition = "2021"
 authors = ["utxostack"]
 forced-target = "wasm32-unknown-unknown"
