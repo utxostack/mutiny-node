@@ -801,21 +801,24 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         ));
 
         // Need to prevent other devices from running at the same time
-        log_trace!(logger, "checking device lock");
+        log_debug!(logger, "checking device lock");
         if !config.skip_device_lock {
             let start = Instant::now();
-            log_trace!(logger, "Checking device lock");
+            log_debug!(logger, "Checking device lock");
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "Current device lock: {lock:?}");
             }
             self.storage.set_device_lock(&logger)?;
-            log_trace!(
+            log_debug!(
                 logger,
                 "Device lock set: took {}ms",
                 start.elapsed().as_millis()
             );
+            if let Some(lock) = self.storage.get_device_lock()? {
+                log_info!(logger, "New device lock: {lock:?}");
+            }
         }
-        log_trace!(logger, "finished checking device lock");
+        log_debug!(logger, "finished checking device lock");
 
         // spawn thread to claim device lock
         log_trace!(logger, "spawning claim device lock");
