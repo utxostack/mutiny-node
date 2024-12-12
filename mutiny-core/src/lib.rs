@@ -1625,7 +1625,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     /// Stops all of the nodes and background processes.
     /// Returns after node has been stopped.
     pub async fn stop(&mut self) -> Result<(), MutinyError> {
-        log_trace!(self.logger, "calling stop");
+        log_debug!(self.logger, "calling stop");
 
         let node_manager = self.node_manager.take().ok_or(MutinyError::NotRunning)?;
 
@@ -1633,7 +1633,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
         // store wallet
         {
-            log_trace!(self.logger, "save wallet state");
+            log_debug!(self.logger, "save wallet state");
             let mut wallet = node_manager
                 .wallet
                 .wallet
@@ -1644,22 +1644,20 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             }
         }
 
-        log_trace!(self.logger, "release device lock");
+        log_debug!(self.logger, "release device lock");
         // stop device lock
         self.device_lock_stop_handle.stop().await;
 
-        log_trace!(self.logger, "stop logger");
+        log_debug!(self.logger, "stop logger");
         // stop logger
         self.logger.stop().await;
 
         // stop the indexeddb object to close db connection
         if self.storage.connected().unwrap_or(false) {
-            log_debug!(self.logger, "stopping storage");
             self.storage.stop().await;
-            log_debug!(self.logger, "stopped storage");
         }
 
-        log_trace!(self.logger, "finished calling stop");
+        log_debug!(self.logger, "finished calling stop");
         Ok(())
     }
 
@@ -1728,7 +1726,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
     /// Deletes all the storage
     pub async fn delete_all(&self) -> Result<(), MutinyError> {
-        log_trace!(self.logger, "calling delete_all");
+        log_debug!(self.logger, "calling delete_all");
         if self.node_manager.is_some() {
             return Err(MutinyError::AlreadyRunning);
         }
@@ -1736,7 +1734,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         self.storage.stop().await;
 
         self.storage.delete_all().await?;
-        log_trace!(self.logger, "finished calling delete_all");
+        log_debug!(self.logger, "finished calling delete_all");
 
         Ok(())
     }
