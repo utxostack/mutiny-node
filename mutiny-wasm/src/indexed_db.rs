@@ -60,7 +60,12 @@ impl IndexedDbStorage {
         vss: Option<Arc<MutinyVssClient>>,
         logger: Arc<MutinyLogger>,
     ) -> Result<IndexedDbStorage, MutinyError> {
-        log_debug!(logger, "Initialize indexed DB storage");
+        log_debug!(
+            logger,
+            "Initialize indexed DB storage with password {} cipher {}",
+            password.is_some(),
+            cipher.is_some()
+        );
         let idx = Self::build_indexed_db_database().await?;
         let indexed_db = Arc::new(RwLock::new(RexieContainer(Some(idx))));
         let password = password.filter(|p| !p.is_empty());
@@ -374,21 +379,24 @@ impl IndexedDbStorage {
                 }
                 let results = futures::future::try_join_all(futs).await?;
 
-                let mut items_vector = Vec::with_capacity(results.len());
                 for (key, value) in results.into_iter().flatten() {
                     // save to memory and batch the write to local storage
                     map.write_data(key.clone(), value.clone(), None)?;
-                    items_vector.push((key, value));
                 }
-                if !items_vector.is_empty() {
+                let inner_map = map.memory.read().unwrap().clone();
+
+                if !inner_map.is_empty() {
+                    let items: Vec<_> = inner_map
+                        .iter()
+                        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                        .collect();
                     // write them so we don't have to pull them down again
-                    Self::save_to_indexed_db(indexed_db, &items_vector).await?;
+                    Self::save_to_indexed_db(indexed_db, &items).await?;
                 }
-                let final_map = map.memory.read().unwrap();
 
                 log_debug!(logger, "Reading VSS took {}ms", start.elapsed().as_millis());
 
-                Ok(final_map.clone())
+                Ok(inner_map)
             }
         }
     }
