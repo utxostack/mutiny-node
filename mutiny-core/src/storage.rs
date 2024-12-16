@@ -15,7 +15,7 @@ use crate::{event::HTLCStatus, MutinyInvoice};
 use crate::{labels::LabelStorage, TransactionDetails};
 use async_trait::async_trait;
 use bdk_chain::Merge;
-use bdk_wallet::ChangeSet;
+pub use bdk_wallet::ChangeSet;
 use bip39::Mnemonic;
 use bitcoin::hashes::Hash;
 use bitcoin::Txid;
@@ -72,6 +72,7 @@ impl From<DelayedKeyValueItem> for VssKeyValueItem {
 fn needs_encryption(key: &str) -> bool {
     match key {
         MNEMONIC_KEY => true,
+        KEYCHAIN_STORE_KEY => true,
         str if str.starts_with(CHANNEL_MANAGER_KEY) => true,
         _ => false,
     }
@@ -520,12 +521,17 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
             return Ok(());
         }
 
+        let version = now().as_secs() as u32;
         match self.get_data::<ChangeSet>(KEYCHAIN_STORE_KEY)? {
             Some(mut keychain_store) => {
                 keychain_store.merge(changeset.clone());
-                self.write_data(KEYCHAIN_STORE_KEY.to_string(), keychain_store, None)
+                self.write_data(
+                    KEYCHAIN_STORE_KEY.to_string(),
+                    keychain_store,
+                    Some(version),
+                )
             }
-            None => self.write_data(KEYCHAIN_STORE_KEY.to_string(), changeset, None),
+            None => self.write_data(KEYCHAIN_STORE_KEY.to_string(), changeset, Some(version)),
         }
     }
 
@@ -1022,35 +1028,6 @@ pub(crate) fn list_payment_info<S: MutinyStorage>(
 
 #[derive(Clone)]
 pub struct OnChainStorage<S: MutinyStorage>(pub(crate) S);
-
-// impl<K, S: MutinyStorage> PersistBackend<K> for OnChainStorage<S>
-// where
-//     K: Default + Clone + Append + serde::Serialize + serde::de::DeserializeOwned,
-// {
-//     type WriteError = MutinyError;
-//     type LoadError = MutinyError;
-
-//     fn write_changes(&mut self, changeset: &K) -> Result<(), Self::WriteError> {
-//         if changeset.is_empty() {
-//             return Ok(());
-//         }
-
-//         match self.0.get_data::<K>(KEYCHAIN_STORE_KEY)? {
-//             Some(mut keychain_store) => {
-//                 keychain_store.append(changeset.clone());
-//                 self.0
-//                     .set_data(KEYCHAIN_STORE_KEY.to_string(), keychain_store, None)
-//             }
-//             None => self
-//                 .0
-//                 .set_data(KEYCHAIN_STORE_KEY.to_string(), changeset, None),
-//         }
-//     }
-
-//     fn load_from_persistence(&mut self) -> Result<Option<K>, Self::LoadError> {
-//         self.0.get_data(KEYCHAIN_STORE_KEY)
-//     }
-// }
 
 pub(crate) fn get_payment_hash_from_key<'a>(key: &'a str, prefix: &str) -> &'a str {
     key.trim_start_matches(prefix)
