@@ -522,22 +522,29 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
 
         let version = now().as_secs() as u32;
-        match self.get_data::<ChangeSet>(KEYCHAIN_STORE_KEY)? {
+        let value = match self.read_changes()? {
             Some(mut keychain_store) => {
                 keychain_store.merge(changeset.clone());
-                self.write_data(
-                    KEYCHAIN_STORE_KEY.to_string(),
-                    keychain_store,
-                    Some(version),
-                )
+                let value = serde_json::to_value(keychain_store)?;
+                VersionedValue { value, version }
             }
-            None => self.write_data(KEYCHAIN_STORE_KEY.to_string(), changeset, Some(version)),
-        }
+            None => {
+                let value = serde_json::to_value(changeset)?;
+                VersionedValue { value, version }
+            }
+        };
+        self.write_data(KEYCHAIN_STORE_KEY.to_string(), value, Some(version))
     }
 
     /// Read Wallet changeset
     fn read_changes(&self) -> Result<Option<ChangeSet>, MutinyError> {
-        self.get_data(KEYCHAIN_STORE_KEY)
+        match self.get_data::<VersionedValue>(KEYCHAIN_STORE_KEY)? {
+            Some(versioned) => {
+                let changeset = serde_json::from_value(versioned.value)?;
+                Ok(Some(changeset))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Spawn background task to run db tasks
