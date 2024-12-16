@@ -102,7 +102,7 @@ impl MutinyAuthClient {
 
         let jwt_url = self.url.clone();
 
-        // message: "1698480000-1234567890123456789"
+        // message: timestamp bytes + b'-' + random bytes
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -114,6 +114,7 @@ impl MutinyAuthClient {
 
         let (sig, pubkey) = self.auth.sign(&msg_bytes)?;
 
+        let message = format!("{:x}", msg_bytes.to_vec().as_hex());
         let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
         let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
 
@@ -121,6 +122,7 @@ impl MutinyAuthClient {
             .http_client
             .post(&jwt_url)
             .json(&serde_json::json!({
+                "message": message,
                 "signature": sig_hex,
                 "public_key": pubkey_hex,
             }))
@@ -181,13 +183,19 @@ mod tests {
     use crate::logging::MutinyLogger;
     use crate::test_utils::*;
 
+    use bitcoin::hashes::hex::prelude::*;
+    use bitcoin::key::rand::Rng;
+    use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1};
     use env_logger::Builder;
     use log::LevelFilter;
+    use secp256k1::ecdsa::Signature;
+    use secp256k1::rand::rngs::OsRng;
     use serde_json::json;
     use warp::Filter;
 
     use std::sync::Arc;
     use std::sync::Once;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     static INIT: Once = Once::new();
 
@@ -273,5 +281,52 @@ mod tests {
 
         let result = client.authenticate().await;
         assert!(result.is_err(), "Expected authentication to fail");
+    }
+
+    #[tokio::test]
+    async fn test_verify_jwt_signature_success() {
+        let secp = Secp256k1::new();
+        let (secret_key, pubkey) = secp.generate_keypair(&mut OsRng);
+
+        // message
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        let mut msg_bytes = [0u8; 32];
+        msg_bytes[..8].copy_from_slice(&timestamp.to_be_bytes());
+        msg_bytes[8] = b'-';
+        secp256k1::rand::thread_rng().fill(&mut msg_bytes[9..]);
+
+        // sign
+        let msg = Message::from_digest_slice(&msg_bytes).expect("32 bytes, guaranteed by type");
+        let sig = secp.sign_ecdsa(&msg, &secret_key);
+
+        // hex
+        let message = format!("{:x}", msg_bytes.to_vec().as_hex());
+        let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
+        let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
+
+        // verify
+        let message_bytes = Vec::from_hex(&message).unwrap();
+        let signature_bytes = Vec::from_hex(&sig_hex).unwrap();
+        let public_key_bytes = Vec::from_hex(&pubkey_hex).unwrap();
+
+        assert_eq!(message_bytes.len(), 32);
+
+        let timestamp_bytes: [u8; 8] = message_bytes[..8].try_into().unwrap();
+        let current_timestamp = u64::from_be_bytes(timestamp_bytes);
+        assert!(
+            current_timestamp.saturating_sub(timestamp) < 2,
+            "Timestamp is too far in the past!"
+        );
+
+        let secp = Secp256k1::verification_only();
+        let pubkey = PublicKey::from_slice(&public_key_bytes).unwrap();
+        let signature = Signature::from_compact(&signature_bytes).unwrap();
+        let message = secp256k1::Message::from_digest_slice(&message_bytes).unwrap();
+        let ret = secp.verify_ecdsa(&message, &signature, &pubkey);
+
+        assert!(ret.is_ok());
     }
 }
