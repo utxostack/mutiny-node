@@ -454,6 +454,20 @@ impl IndexedDbStorage {
                 let obj = vss.get_object(&kv.key).await?;
                 return Ok(Some((kv.key, obj.value)));
             }
+            KEYCHAIN_STORE_KEY => match current.get_data::<VersionedValue>(&kv.key)? {
+                Some(local) => {
+                    if local.version < kv.version {
+                        let obj = vss.get_object(&kv.key).await?;
+                        if serde_json::from_value::<ChangeSet>(obj.value.clone()).is_ok() {
+                            return Ok(Some((kv.key, obj.value)));
+                        }
+                    }
+                }
+                None => {
+                    let obj = vss.get_object(&kv.key).await?;
+                    return Ok(Some((kv.key, obj.value)));
+                }
+            },
             key => {
                 if key.starts_with(MONITORS_PREFIX_KEY) {
                     // we can get versions from monitors, so we should compare
