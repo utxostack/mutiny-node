@@ -62,6 +62,7 @@ use crate::{
         PAYMENT_INBOUND_PREFIX_KEY, PAYMENT_OUTBOUND_PREFIX_KEY, TRANSACTION_DETAILS_PREFIX_KEY,
     },
 };
+use anyhow::Context;
 use bdk_chain::ConfirmationTime;
 use bip39::Mnemonic;
 pub use bitcoin;
@@ -804,7 +805,6 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         log_debug!(logger, "checking device lock");
         if !config.skip_device_lock {
             let start = Instant::now();
-            log_debug!(logger, "Checking device lock");
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "Current device lock: {lock:?}");
             }
@@ -816,6 +816,25 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             );
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "New device lock: {lock:?}");
+            }
+
+            // Wait device lock syncing
+            let device_id = self.storage.get_device_id()?;
+            let max_retries = 10;
+            let mut retries = 0;
+            while !self
+                .storage
+                .fetch_device_lock()
+                .await?
+                .is_some_and(|lock| lock.is_last_locker(&device_id))
+            {
+                log_info!(logger, "Waiting device lock syncing... {retries}");
+                retries += 1;
+                if retries > max_retries {
+                    log_error!(logger, "Can't syncing device lock to VSS");
+                    return Err(MutinyError::AlreadyRunning);
+                }
+                sleep(300).await
             }
         }
         log_debug!(logger, "finished checking device lock");
@@ -856,7 +875,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         if let Some(cb) = self.ln_event_callback.clone() {
             nm_builder.with_ln_event_callback(cb);
         }
-        let node_manager = Arc::new(nm_builder.build().await?);
+        let node_manager = Arc::new(
+            nm_builder
+                .build()
+                .await
+                .with_context(|| "build node manager")?,
+        );
 
         log_trace!(
             logger,

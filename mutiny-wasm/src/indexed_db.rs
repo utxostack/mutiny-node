@@ -1,7 +1,8 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use bip39::Mnemonic;
 use futures::lock::Mutex;
+use futures::FutureExt;
 use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info};
@@ -375,7 +376,12 @@ impl IndexedDbStorage {
                 log_info!(logger, "Read {} keys from vss", keys.len());
                 let mut futs = Vec::with_capacity(keys.len());
                 for kv in keys {
-                    futs.push(Self::handle_vss_key(kv, vss, &map, logger));
+                    let key = kv.key.clone();
+                    futs.push(
+                        Self::handle_vss_key(kv, vss, &map, logger).then(|r| async move {
+                            r.with_context(|| format!("handle vss key {}", key))
+                        }),
+                    );
                 }
                 let results = futures::future::try_join_all(futs).await?;
 
@@ -454,11 +460,14 @@ impl IndexedDbStorage {
                 let obj = vss.get_object(&kv.key).await?;
                 return Ok(Some((kv.key, obj.value)));
             }
-            KEYCHAIN_STORE_KEY => match current.get_data::<VersionedValue>(&kv.key)? {
+            KEYCHAIN_STORE_KEY => match current
+                .get_data::<VersionedValue>(&kv.key)
+                .with_context(|| "read keychain data from storage")?
+            {
                 Some(local) => {
                     if local.version < kv.version {
                         let obj = vss.get_object(&kv.key).await?;
-                        if serde_json::from_value::<ChangeSet>(obj.value.clone()).is_ok() {
+                        if serde_json::from_value::<VersionedValue>(obj.value.clone()).is_ok() {
                             return Ok(Some((kv.key, obj.value)));
                         }
                     }
