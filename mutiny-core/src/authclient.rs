@@ -183,7 +183,7 @@ mod tests {
     use crate::logging::MutinyLogger;
     use crate::test_utils::*;
 
-    use bitcoin::hashes::hex::prelude::*;
+    use bitcoin::hashes::{hex::prelude::*, sha256, Hash};
     use bitcoin::key::rand::Rng;
     use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1};
     use env_logger::Builder;
@@ -298,8 +298,12 @@ mod tests {
         msg_bytes[8] = b'-';
         secp256k1::rand::thread_rng().fill(&mut msg_bytes[9..]);
 
+        // Hash the message before signing
+        let hashed_msg = sha256::Hash::hash(&msg_bytes);
+
         // sign
-        let msg = Message::from_digest_slice(&msg_bytes).expect("32 bytes, guaranteed by type");
+        let msg =
+            Message::from_digest_slice(hashed_msg.as_ref()).expect("32 bytes, guaranteed by type");
         let sig = secp.sign_ecdsa(&msg, &secret_key);
 
         // hex
@@ -324,8 +328,12 @@ mod tests {
         let secp = Secp256k1::verification_only();
         let pubkey = PublicKey::from_slice(&public_key_bytes).unwrap();
         let signature = Signature::from_compact(&signature_bytes).unwrap();
-        let message = secp256k1::Message::from_digest_slice(&message_bytes).unwrap();
-        let ret = secp.verify_ecdsa(&message, &signature, &pubkey);
+
+        // Hash the message before verifying (because the signature was created using the hashed message)
+        let hashed_message = sha256::Hash::hash(&message_bytes);
+        let msg = Message::from_digest_slice(hashed_message.as_ref()).unwrap();
+
+        let ret = secp.verify_ecdsa(&msg, &signature, &pubkey);
 
         assert!(ret.is_ok());
     }
