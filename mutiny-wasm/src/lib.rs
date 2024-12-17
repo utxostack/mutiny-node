@@ -197,6 +197,9 @@ impl MutinyWallet {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::memory_only());
 
+        let version = env!("CARGO_PKG_VERSION");
+        log_info!(logger, "Node version {version}");
+
         let cipher = password
             .as_ref()
             .filter(|p| !p.is_empty())
