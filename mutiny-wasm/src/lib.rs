@@ -79,6 +79,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
+        database: String,
         password: Option<String>,
         mnemonic_str: Option<String>,
         websocket_proxy_addr: Option<String>,
@@ -130,6 +131,7 @@ impl MutinyWallet {
         });
 
         match Self::new_internal(
+            database,
             password,
             mnemonic_str,
             websocket_proxy_addr,
@@ -172,6 +174,7 @@ impl MutinyWallet {
 
     #[allow(clippy::too_many_arguments)]
     async fn new_internal(
+        database: String,
         password: Option<String>,
         mnemonic_str: Option<String>,
         websocket_proxy_addr: Option<String>,
@@ -212,9 +215,13 @@ impl MutinyWallet {
 
         let override_mnemonic = mnemonic_str.map(|s| Mnemonic::from_str(&s)).transpose()?;
 
-        let mnemonic =
-            IndexedDbStorage::get_mnemonic(override_mnemonic, password.as_deref(), cipher.clone())
-                .await?;
+        let mnemonic = IndexedDbStorage::get_mnemonic(
+            database.clone(),
+            override_mnemonic,
+            password.as_deref(),
+            cipher.clone(),
+        )
+        .await?;
 
         let seed = mnemonic.to_seed("");
         let xprivkey = Xpriv::new_master(network, &seed).unwrap();
@@ -231,7 +238,8 @@ impl MutinyWallet {
             })
         };
 
-        let storage = IndexedDbStorage::new(password, cipher, vss_client, logger.clone()).await?;
+        let storage =
+            IndexedDbStorage::new(database, password, cipher, vss_client, logger.clone()).await?;
 
         let mut config_builder = MutinyWalletConfigBuilder::new(xprivkey).with_network(network);
         if let Some(w) = websocket_proxy_addr {
@@ -311,13 +319,14 @@ impl MutinyWallet {
     /// Returns if there is a saved wallet in storage.
     /// This is checked by seeing if a mnemonic seed exists in storage.
     #[wasm_bindgen]
-    pub async fn has_node_manager() -> Result<bool, MutinyJsError> {
-        Ok(IndexedDbStorage::has_mnemonic().await?)
+    pub async fn has_node_manager(database: String) -> Result<bool, MutinyJsError> {
+        Ok(IndexedDbStorage::has_mnemonic(database).await?)
     }
 
     /// Returns the number of remaining seconds until the device lock expires.
     #[wasm_bindgen]
     pub async fn get_device_lock_remaining_secs(
+        database: String,
         password: Option<String>,
         _auth_url: Option<String>,
         storage_url: Option<String>,
@@ -329,7 +338,8 @@ impl MutinyWallet {
             .map(|p| encryption_key_from_pass(p))
             .transpose()?;
         let mnemonic =
-            IndexedDbStorage::get_mnemonic(None, password.as_deref(), cipher.clone()).await?;
+            IndexedDbStorage::get_mnemonic(database, None, password.as_deref(), cipher.clone())
+                .await?;
 
         let seed = mnemonic.to_seed("");
         // Network doesn't matter here, only for encoding
@@ -1018,8 +1028,10 @@ impl MutinyWallet {
 
     /// Exports the current state of the node manager to a json object.
     #[wasm_bindgen]
-    pub async fn get_logs() -> Result<JsValue /* Option<Vec<String>> */, MutinyJsError> {
-        let logs = IndexedDbStorage::get_logs().await?;
+    pub async fn get_logs(
+        database: String,
+    ) -> Result<JsValue /* Option<Vec<String>> */, MutinyJsError> {
+        let logs = IndexedDbStorage::get_logs(database).await?;
         Ok(JsValue::from_serde(&logs)?)
     }
 
@@ -1042,7 +1054,10 @@ impl MutinyWallet {
 
     /// Exports the current state of the node manager to a json object.
     #[wasm_bindgen]
-    pub async fn export_json(password: Option<String>) -> Result<String, MutinyJsError> {
+    pub async fn export_json(
+        database: String,
+        password: Option<String>,
+    ) -> Result<String, MutinyJsError> {
         let logger = Arc::new(MutinyLogger::default());
         let cipher = password
             .as_ref()
@@ -1050,7 +1065,7 @@ impl MutinyWallet {
             .map(|p| encryption_key_from_pass(p))
             .transpose()?;
         // todo init vss
-        let storage = IndexedDbStorage::new(password, cipher, None, logger).await?;
+        let storage = IndexedDbStorage::new(database, password, cipher, None, logger).await?;
         if storage.get_mnemonic().is_err() {
             // if we get an error, then we have the wrong password
             return Err(MutinyJsError::IncorrectPassword);
@@ -1061,9 +1076,9 @@ impl MutinyWallet {
 
     /// Restore a node manager from a json object.
     #[wasm_bindgen]
-    pub async fn import_json(json: String) -> Result<(), MutinyJsError> {
+    pub async fn import_json(database: String, json: String) -> Result<(), MutinyJsError> {
         let json: serde_json::Value = serde_json::from_str(&json)?;
-        IndexedDbStorage::import(json).await?;
+        IndexedDbStorage::import(database, json).await?;
         Ok(())
     }
 
@@ -1082,6 +1097,7 @@ impl MutinyWallet {
     /// Should refresh or restart afterwards. Wallet should be stopped.
     #[wasm_bindgen]
     pub async fn restore_mnemonic(
+        database: String,
         m: String,
         password: Option<String>,
     ) -> Result<(), MutinyJsError> {
@@ -1091,7 +1107,8 @@ impl MutinyWallet {
             .filter(|p| !p.is_empty())
             .map(|p| encryption_key_from_pass(p))
             .transpose()?;
-        let storage = IndexedDbStorage::new(password, cipher, None, logger.clone()).await?;
+        let storage =
+            IndexedDbStorage::new(database, password, cipher, None, logger.clone()).await?;
         mutiny_core::MutinyWallet::<IndexedDbStorage>::restore_mnemonic(
             storage,
             Mnemonic::from_str(&m).map_err(|_| MutinyJsError::InvalidMnemonic)?,
@@ -1161,7 +1178,7 @@ mod tests {
     use crate::{uninit, MutinyWallet};
 
     use crate::error::MutinyJsError;
-    use crate::indexed_db::IndexedDbStorage;
+    use crate::indexed_db::{IndexedDbStorage, WALLET_DATABASE_NAME};
     use js_sys::Array;
     use mutiny_core::storage::MutinyStorage;
     use mutiny_core::utils::sleep;
@@ -1176,8 +1193,13 @@ mod tests {
         log!("creating mutiny wallet!");
         let password = Some("password".to_string());
 
-        assert!(!MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            !MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
         MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             None,
             None,
@@ -1204,9 +1226,13 @@ mod tests {
         .await
         .expect("mutiny wallet should initialize");
         sleep(1_000).await;
-        assert!(MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1215,6 +1241,7 @@ mod tests {
     #[test]
     async fn fail_to_create_wallet_different_seed() {
         MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             None,
             None,
             None,
@@ -1241,11 +1268,16 @@ mod tests {
         .await
         .expect("mutiny wallet should initialize");
         sleep(1_000).await;
-        assert!(MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
         uninit().await;
 
         let seed = mutiny_core::generate_seed(12).unwrap();
         let result = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             None,
             Some(seed.to_string()),
             None,
@@ -1277,7 +1309,7 @@ mod tests {
             Ok(_) => panic!("should have failed to create wallet with different seed"),
         }
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1288,8 +1320,13 @@ mod tests {
         log!("trying to create 2 mutiny wallets!");
         let password = Some("password".to_string());
 
-        assert!(!MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            !MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
         MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             None,
             None,
@@ -1316,10 +1353,15 @@ mod tests {
         .await
         .expect("mutiny wallet should initialize");
         sleep(1_000).await;
-        assert!(MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
 
         // try to create a second
         let result = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             None,
             None,
@@ -1351,7 +1393,7 @@ mod tests {
             panic!("should have failed to create a second mutiny wallet");
         };
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1366,11 +1408,12 @@ mod tests {
         let password = Some("password".to_string());
 
         // make sure storage is empty
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
 
         let nm = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             Some(seed.to_string()),
             None,
@@ -1398,11 +1441,15 @@ mod tests {
         .unwrap();
 
         log!("checking nm");
-        assert!(MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
         log!("checking seed");
         assert_eq!(seed.to_string(), nm.show_seed());
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1415,11 +1462,12 @@ mod tests {
         let password = Some("password".to_string());
 
         // make sure storage is empty
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
 
         let mut nm = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             Some(seed.to_string()),
             None,
@@ -1447,7 +1495,11 @@ mod tests {
         .unwrap();
 
         log!("checking nm");
-        assert!(MutinyWallet::has_node_manager().await.unwrap());
+        assert!(
+            MutinyWallet::has_node_manager(WALLET_DATABASE_NAME.to_string())
+                .await
+                .unwrap()
+        );
         log!("checking seed");
         assert_eq!(seed.to_string(), nm.show_seed());
         nm.stop().await.unwrap();
@@ -1456,6 +1508,7 @@ mod tests {
 
         // create with incorrect password
         let result = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             None,
             Some(seed.to_string()),
             None,
@@ -1485,7 +1538,7 @@ mod tests {
             panic!("should have failed to create wallet with incorrect password");
         }
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1496,6 +1549,7 @@ mod tests {
         log!("creating new nodes");
 
         let nm = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             Some("password".to_string()),
             None,
             None,
@@ -1534,7 +1588,7 @@ mod tests {
         assert_ne!("", node_identity.uuid());
         assert_ne!("", node_identity.pubkey());
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1566,6 +1620,7 @@ mod tests {
         log!("getting logs with no password");
 
         let nm = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             None,
             None,
             None,
@@ -1607,13 +1662,15 @@ mod tests {
 
         // sleep to make sure logs save
         sleep(6_000).await;
-        let logs = MutinyWallet::get_logs().await.expect("should get logs");
+        let logs = MutinyWallet::get_logs(WALLET_DATABASE_NAME.to_string())
+            .await
+            .expect("should get logs");
         let parsed_logs = js_to_option_vec_string(logs).expect("should parse logs");
         assert!(parsed_logs.is_some());
         assert!(!parsed_logs.clone().unwrap().is_empty());
         assert_ne!("", parsed_logs.unwrap()[0]);
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;
@@ -1625,6 +1682,7 @@ mod tests {
 
         let password = Some("password".to_string());
         let nm = MutinyWallet::new(
+            WALLET_DATABASE_NAME.to_string(),
             password.clone(),
             None,
             None,
@@ -1666,13 +1724,15 @@ mod tests {
 
         // sleep to make sure logs save
         sleep(6_000).await;
-        let logs = MutinyWallet::get_logs().await.expect("should get logs");
+        let logs = MutinyWallet::get_logs(WALLET_DATABASE_NAME.to_string())
+            .await
+            .expect("should get logs");
         let parsed_logs = js_to_option_vec_string(logs).expect("should parse logs");
         assert!(parsed_logs.is_some());
         assert!(!parsed_logs.clone().unwrap().is_empty());
         assert_ne!("", parsed_logs.unwrap()[0]);
 
-        IndexedDbStorage::clear()
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
             .await
             .expect("failed to clear storage");
         uninit().await;

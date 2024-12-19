@@ -1775,7 +1775,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
         let device_id = storage.get_device_id()?;
         let logs: Option<Vec<String>> = storage.get_data(LOGGING_KEY)?;
         storage.stop().await;
-        S::clear().await?;
+        S::clear(storage.database()?).await?;
         storage.start().await?;
         storage.insert_mnemonic(m)?;
         storage.write_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;

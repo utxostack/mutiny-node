@@ -40,6 +40,7 @@ unsafe impl Sync for RexieContainer {}
 
 #[derive(Clone)]
 pub struct IndexedDbStorage {
+    pub(crate) database: String,
     pub(crate) password: Option<String>,
     pub cipher: Option<Cipher>,
     /// In-memory cache of the wallet data
@@ -56,18 +57,28 @@ pub struct IndexedDbStorage {
 
 impl IndexedDbStorage {
     pub async fn new(
+        database: String,
         password: Option<String>,
         cipher: Option<Cipher>,
         vss: Option<Arc<MutinyVssClient>>,
         logger: Arc<MutinyLogger>,
     ) -> Result<IndexedDbStorage, MutinyError> {
+        if !database.starts_with(WALLET_DATABASE_NAME) {
+            log_error!(
+                logger,
+                "IndexedDB database must prefix with '{WALLET_DATABASE_NAME}', got '{database}'",
+            );
+            return Err(MutinyError::PersistenceFailed {
+                source: MutinyStorageError::IndexedDBError,
+            });
+        }
         log_debug!(
             logger,
             "Initialize indexed DB storage with password {} cipher {}",
             password.is_some(),
             cipher.is_some()
         );
-        let idx = Self::build_indexed_db_database().await?;
+        let idx = Self::build_indexed_db_database(database.clone()).await?;
         let indexed_db = Arc::new(RwLock::new(RexieContainer(Some(idx))));
         let password = password.filter(|p| !p.is_empty());
 
@@ -84,6 +95,7 @@ impl IndexedDbStorage {
         log_debug!(logger, "Complete initialize indexed DB storage");
 
         Ok(IndexedDbStorage {
+            database,
             password,
             cipher,
             memory,
@@ -96,8 +108,8 @@ impl IndexedDbStorage {
         })
     }
 
-    pub(crate) async fn has_mnemonic() -> Result<bool, MutinyError> {
-        let indexed_db = Self::build_indexed_db_database().await?;
+    pub(crate) async fn has_mnemonic(database: String) -> Result<bool, MutinyError> {
+        let indexed_db = Self::build_indexed_db_database(database).await?;
         let tx = indexed_db
             .transaction(&[WALLET_OBJECT_STORE_NAME], TransactionMode::ReadOnly)
             .map_err(|e| {
@@ -124,11 +136,12 @@ impl IndexedDbStorage {
     /// Read the mnemonic from indexed db, if one does not exist,
     /// then generate a new one and save it to indexed db.
     pub(crate) async fn get_mnemonic(
+        database: String,
         override_mnemonic: Option<Mnemonic>,
         password: Option<&str>,
         cipher: Option<Cipher>,
     ) -> Result<Mnemonic, MutinyError> {
-        let indexed_db = Self::build_indexed_db_database().await?;
+        let indexed_db = Self::build_indexed_db_database(database).await?;
         let tx = indexed_db
             .transaction(&[WALLET_OBJECT_STORE_NAME], TransactionMode::ReadWrite)
             .map_err(|e| {
@@ -182,8 +195,8 @@ impl IndexedDbStorage {
         Ok(res)
     }
 
-    pub(crate) async fn get_logs() -> Result<Option<Vec<String>>, MutinyError> {
-        let indexed_db = Self::build_indexed_db_database().await?;
+    pub(crate) async fn get_logs(database: String) -> Result<Option<Vec<String>>, MutinyError> {
+        let indexed_db = Self::build_indexed_db_database(database).await?;
         let tx = indexed_db
             .transaction(&[WALLET_OBJECT_STORE_NAME], TransactionMode::ReadOnly)
             .map_err(|e| {
@@ -640,8 +653,13 @@ impl IndexedDbStorage {
         Ok(None)
     }
 
-    async fn build_indexed_db_database() -> Result<Rexie, MutinyError> {
-        let rexie = Rexie::builder(WALLET_DATABASE_NAME)
+    async fn build_indexed_db_database(database: String) -> Result<Rexie, MutinyError> {
+        if database.is_empty() {
+            return Err(MutinyError::PersistenceFailed {
+                source: MutinyStorageError::IndexedDBError,
+            });
+        }
+        let rexie = Rexie::builder(&database)
             .version(1)
             .add_object_store(ObjectStore::new(WALLET_OBJECT_STORE_NAME))
             .build()
@@ -689,6 +707,10 @@ fn used_once(key: &str) -> bool {
 
 #[async_trait(?Send)]
 impl MutinyStorage for IndexedDbStorage {
+    fn database(&self) -> Result<String, MutinyError> {
+        Ok(self.database.clone())
+    }
+
     fn password(&self) -> Option<&str> {
         self.password.as_deref()
     }
@@ -812,7 +834,7 @@ impl MutinyStorage for IndexedDbStorage {
         log_debug!(self.logger, "starting storage");
         let indexed_db = if self.indexed_db.try_read()?.0.is_none() {
             Arc::new(RwLock::new(RexieContainer(Some(
-                Self::build_indexed_db_database().await?,
+                Self::build_indexed_db_database(self.database.clone()).await?,
             ))))
         } else {
             self.indexed_db.clone()
@@ -891,9 +913,9 @@ impl MutinyStorage for IndexedDbStorage {
         Ok(())
     }
 
-    async fn import(json: Value) -> Result<(), MutinyError> {
-        Self::clear().await?;
-        let indexed_db = Self::build_indexed_db_database().await?;
+    async fn import(database: String, json: Value) -> Result<(), MutinyError> {
+        Self::clear(database.clone()).await?;
+        let indexed_db = Self::build_indexed_db_database(database).await?;
         let tx = indexed_db
             .transaction(&[WALLET_OBJECT_STORE_NAME], TransactionMode::ReadWrite)
             .map_err(|e| {
@@ -927,8 +949,8 @@ impl MutinyStorage for IndexedDbStorage {
         Ok(())
     }
 
-    async fn clear() -> Result<(), MutinyError> {
-        let indexed_db = Self::build_indexed_db_database().await?;
+    async fn clear(database: String) -> Result<(), MutinyError> {
+        let indexed_db = Self::build_indexed_db_database(database).await?;
         let tx = indexed_db
             .transaction(&[WALLET_OBJECT_STORE_NAME], TransactionMode::ReadWrite)
             .map_err(|e| MutinyError::write_err(anyhow!("Failed clear indexed db: {e}").into()))?;
@@ -986,9 +1008,15 @@ mod tests {
         log!("{test_name}");
 
         let logger = Arc::new(MutinyLogger::default());
-        let storage = IndexedDbStorage::new(Some("".to_string()), None, None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            Some("".to_string()),
+            None,
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(storage.password, None);
     }
@@ -1004,9 +1032,15 @@ mod tests {
         let logger = Arc::new(MutinyLogger::default());
         let password = "password".to_string();
         let cipher = encryption_key_from_pass(&password).unwrap();
-        let storage = IndexedDbStorage::new(Some(password), Some(cipher), None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            Some(password),
+            Some(cipher),
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         let result: Option<String> = storage.get(&key).unwrap();
         assert_eq!(result, None);
@@ -1036,7 +1070,9 @@ mod tests {
         assert_eq!(result, None);
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1051,14 +1087,22 @@ mod tests {
             }
         );
 
-        IndexedDbStorage::import(json).await.unwrap();
+        IndexedDbStorage::import(WALLET_DATABASE_NAME.to_string(), json)
+            .await
+            .unwrap();
 
         let logger = Arc::new(MutinyLogger::default());
         let password = "password".to_string();
         let cipher = encryption_key_from_pass(&password).unwrap();
-        let storage = IndexedDbStorage::new(Some(password), Some(cipher), None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            Some(password),
+            Some(cipher),
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         let result: Option<String> = storage.get("test_key").unwrap();
         assert_eq!(result, Some("test_value".to_string()));
@@ -1067,7 +1111,9 @@ mod tests {
         assert_eq!(result, Some("test_value2".to_string()));
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1081,13 +1127,21 @@ mod tests {
         let logger = Arc::new(MutinyLogger::default());
         let password = "password".to_string();
         let cipher = encryption_key_from_pass(&password).unwrap();
-        let storage = IndexedDbStorage::new(Some(password), Some(cipher), None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            Some(password),
+            Some(cipher),
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         storage.write_raw(vec![(key.clone(), value)]).unwrap();
 
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
 
         storage.reload_from_indexed_db().await.unwrap();
 
@@ -1095,7 +1149,9 @@ mod tests {
         assert_eq!(result, None);
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1106,16 +1162,19 @@ mod tests {
         let seed = Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").expect("could not generate");
 
         let logger = Arc::new(MutinyLogger::default());
-        let storage = IndexedDbStorage::new(None, None, None, logger)
-            .await
-            .unwrap();
+        let storage =
+            IndexedDbStorage::new(WALLET_DATABASE_NAME.to_string(), None, None, None, logger)
+                .await
+                .unwrap();
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 
         let stored_mnemonic = storage.get_mnemonic().unwrap();
         assert_eq!(Some(mnemonic), stored_mnemonic);
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1128,9 +1187,15 @@ mod tests {
         let logger = Arc::new(MutinyLogger::default());
         let password = "password".to_string();
         let cipher = encryption_key_from_pass(&password).unwrap();
-        let storage = IndexedDbStorage::new(Some(password), Some(cipher), None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            Some(password),
+            Some(cipher),
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 
@@ -1138,7 +1203,9 @@ mod tests {
         assert_eq!(Some(mnemonic), stored_mnemonic);
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1147,9 +1214,15 @@ mod tests {
         log!("{test_name}");
         let logger = Arc::new(MutinyLogger::default());
 
-        let storage = IndexedDbStorage::new(None, None, None, logger.clone())
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            None,
+            None,
+            None,
+            logger.clone(),
+        )
+        .await
+        .unwrap();
         let seed = generate_seed(12).unwrap();
         storage
             .write_data(MNEMONIC_KEY.to_string(), seed, None)
@@ -1165,9 +1238,15 @@ mod tests {
             .transpose()
             .unwrap();
 
-        let storage = IndexedDbStorage::new(password, cipher, None, logger)
-            .await
-            .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            password,
+            cipher,
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
 
         match storage.get_mnemonic() {
             Err(MutinyError::IncorrectPassword) => (),
@@ -1176,6 +1255,8 @@ mod tests {
         }
 
         // clear the storage to clean up
-        IndexedDbStorage::clear().await.unwrap();
+        IndexedDbStorage::clear(WALLET_DATABASE_NAME.to_string())
+            .await
+            .unwrap();
     }
 }

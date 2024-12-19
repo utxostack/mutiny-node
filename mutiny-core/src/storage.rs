@@ -173,6 +173,8 @@ impl DeviceLock {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
+    /// Database
+    fn database(&self) -> Result<String, MutinyError>;
     /// Get the password used to encrypt the storage
     fn password(&self) -> Option<&str>;
 
@@ -351,14 +353,14 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     }
 
     /// Override the storage with the new JSON object
-    async fn import(json: Value) -> Result<(), MutinyError>;
+    async fn import(database: String, json: Value) -> Result<(), MutinyError>;
 
     /// Deletes all data from the storage
-    async fn clear() -> Result<(), MutinyError>;
+    async fn clear(database: String) -> Result<(), MutinyError>;
 
     /// Deletes all data from the storage and removes lock from VSS
     async fn delete_all(&self) -> Result<(), MutinyError> {
-        Self::clear().await?;
+        Self::clear(self.database()?).await?;
         // remove lock from VSS if is is enabled
         if self.vss_client().is_some() {
             let device = self.get_device_id()?;
@@ -553,6 +555,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
 
 #[derive(Clone)]
 pub struct MemoryStorage {
+    pub database: String,
     pub password: Option<String>,
     pub cipher: Option<Cipher>,
     pub memory: Arc<RwLock<HashMap<String, Value>>>,
@@ -569,6 +572,7 @@ impl MemoryStorage {
         vss_client: Option<Arc<MutinyVssClient>>,
     ) -> Self {
         Self {
+            database: "memdb".to_string(),
             cipher,
             password,
             memory: Arc::new(RwLock::new(HashMap::new())),
@@ -607,6 +611,9 @@ impl Default for MemoryStorage {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl MutinyStorage for MemoryStorage {
+    fn database(&self) -> Result<String, MutinyError> {
+        Ok(self.database.clone())
+    }
     fn password(&self) -> Option<&str> {
         self.password.as_deref()
     }
@@ -709,11 +716,11 @@ impl MutinyStorage for MemoryStorage {
         Ok(())
     }
 
-    async fn import(_json: Value) -> Result<(), MutinyError> {
+    async fn import(_database: String, _json: Value) -> Result<(), MutinyError> {
         Ok(())
     }
 
-    async fn clear() -> Result<(), MutinyError> {
+    async fn clear(_database: String) -> Result<(), MutinyError> {
         Ok(())
     }
 
@@ -740,6 +747,10 @@ impl MutinyStorage for MemoryStorage {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl MutinyStorage for () {
+    fn database(&self) -> Result<String, MutinyError> {
+        Ok(String::new())
+    }
+
     fn password(&self) -> Option<&str> {
         None
     }
@@ -793,11 +804,11 @@ impl MutinyStorage for () {
         Ok(())
     }
 
-    async fn import(_json: Value) -> Result<(), MutinyError> {
+    async fn import(_database: String, _json: Value) -> Result<(), MutinyError> {
         Ok(())
     }
 
-    async fn clear() -> Result<(), MutinyError> {
+    async fn clear(_database: String) -> Result<(), MutinyError> {
         Ok(())
     }
 
