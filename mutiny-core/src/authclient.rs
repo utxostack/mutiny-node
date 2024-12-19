@@ -1,8 +1,8 @@
 use crate::{authmanager::AuthManager, error::MutinyError, logging::MutinyLogger, utils};
 use async_lock::RwLock;
-use bitcoin::hashes::hex::prelude::*;
+use bitcoin::hashes::{hex::prelude::*, sha256, Hash};
 use bitcoin::key::rand::Rng;
-use bitcoin::secp256k1;
+use bitcoin::secp256k1::rand::thread_rng;
 use jwt_compact::UntrustedToken;
 use lightning::{log_debug, log_error, log_info};
 use lightning::{log_trace, util::logger::*};
@@ -102,19 +102,18 @@ impl MutinyAuthClient {
 
         let jwt_url = self.url.clone();
 
-        // message: timestamp bytes + b'-' + random bytes
+        // message: timestamp + '-' + random data
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
-            .as_secs();
-        let mut msg_bytes = [0u8; 32];
-        msg_bytes[..8].copy_from_slice(&timestamp.to_be_bytes());
-        msg_bytes[8] = b'-';
-        secp256k1::rand::thread_rng().fill(&mut msg_bytes[9..]);
+            .as_secs()
+            - 1;
+        let random_data: u64 = thread_rng().gen_range(u32::MAX as u64..u64::MAX);
+        let challenge = format!("{}-{}", timestamp, random_data);
 
-        let (sig, pubkey) = self.auth.sign(&msg_bytes)?;
+        let hashed_msg = sha256::Hash::hash(challenge.as_bytes());
+        let (sig, pubkey) = self.auth.sign(hashed_msg.as_ref())?;
 
-        let message = format!("{:x}", msg_bytes.to_vec().as_hex());
         let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
         let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
 
@@ -122,9 +121,9 @@ impl MutinyAuthClient {
             .http_client
             .post(&jwt_url)
             .json(&serde_json::json!({
-                "message": message,
-                "signature": sig_hex,
                 "public_key": pubkey_hex,
+                "signature": sig_hex,
+                "challenge": challenge.to_string(),
             }))
             .send()
             .await
@@ -185,7 +184,7 @@ mod tests {
 
     use bitcoin::hashes::{hex::prelude::*, sha256, Hash};
     use bitcoin::key::rand::Rng;
-    use bitcoin::secp256k1::{self, Message, PublicKey, Secp256k1};
+    use bitcoin::secp256k1::{self, rand::thread_rng, Message, PublicKey, Secp256k1};
     use env_logger::Builder;
     use log::LevelFilter;
     use secp256k1::ecdsa::Signature;
@@ -288,49 +287,34 @@ mod tests {
         let secp = Secp256k1::new();
         let (secret_key, pubkey) = secp.generate_keypair(&mut OsRng);
 
-        // message
+        // message: timestamp + '-' + random data
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
-            .as_secs();
-        let mut msg_bytes = [0u8; 32];
-        msg_bytes[..8].copy_from_slice(&timestamp.to_be_bytes());
-        msg_bytes[8] = b'-';
-        secp256k1::rand::thread_rng().fill(&mut msg_bytes[9..]);
+            .as_secs()
+            - 1;
+        let random_data: u64 = thread_rng().gen_range(u32::MAX as u64..u64::MAX);
+        let challenge = format!("{}-{}", timestamp, random_data);
 
-        // Hash the message before signing
-        let hashed_msg = sha256::Hash::hash(&msg_bytes);
-
-        // sign
+        let hashed_msg = sha256::Hash::hash(challenge.as_bytes());
         let msg =
             Message::from_digest_slice(hashed_msg.as_ref()).expect("32 bytes, guaranteed by type");
         let sig = secp.sign_ecdsa(&msg, &secret_key);
 
         // hex
-        let message = format!("{:x}", msg_bytes.to_vec().as_hex());
-        let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
         let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
+        let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
 
         // verify
-        let message_bytes = Vec::from_hex(&message).unwrap();
         let signature_bytes = Vec::from_hex(&sig_hex).unwrap();
         let public_key_bytes = Vec::from_hex(&pubkey_hex).unwrap();
-
-        assert_eq!(message_bytes.len(), 32);
-
-        let timestamp_bytes: [u8; 8] = message_bytes[..8].try_into().unwrap();
-        let current_timestamp = u64::from_be_bytes(timestamp_bytes);
-        assert!(
-            current_timestamp.saturating_sub(timestamp) < 2,
-            "Timestamp is too far in the past!"
-        );
 
         let secp = Secp256k1::verification_only();
         let pubkey = PublicKey::from_slice(&public_key_bytes).unwrap();
         let signature = Signature::from_compact(&signature_bytes).unwrap();
 
         // Hash the message before verifying (because the signature was created using the hashed message)
-        let hashed_message = sha256::Hash::hash(&message_bytes);
+        let hashed_message = sha256::Hash::hash(challenge.as_bytes());
         let msg = Message::from_digest_slice(hashed_message.as_ref()).unwrap();
 
         let ret = secp.verify_ecdsa(&msg, &signature, &pubkey);
