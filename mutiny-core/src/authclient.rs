@@ -123,7 +123,7 @@ impl MutinyAuthClient {
             .json(&serde_json::json!({
                 "public_key": pubkey_hex,
                 "signature": sig_hex,
-                "challenge": challenge.to_string(),
+                "challenge": challenge,
             }))
             .send()
             .await

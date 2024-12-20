@@ -15,9 +15,14 @@ impl AuthManager {
     pub fn new(xprivkey: Xpriv) -> Result<Self, MutinyError> {
         let context = Secp256k1::new();
 
-        let base_path = DerivationPath::from_str("m/138'/0")?;
-        let key = xprivkey.derive_priv(&context, &base_path)?;
-        let hashing_key = key.private_key;
+        let joyid_master_path = DerivationPath::from_str("m/0'/0'").unwrap();
+        let joyid_master_key = xprivkey.derive_priv(&context, &joyid_master_path).unwrap();
+
+        let joyid_lightning_key_path = DerivationPath::from_str("m/0'").unwrap();
+        let joyid_lightning_key = joyid_master_key
+            .derive_priv(&context, &joyid_lightning_key_path)
+            .unwrap();
+        let hashing_key = joyid_lightning_key.private_key;
 
         Ok(Self {
             hashing_key,
