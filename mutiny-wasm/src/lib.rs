@@ -94,6 +94,7 @@ impl MutinyWallet {
         auth_url: Option<String>,
         subscription_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
         _scorer_url: Option<String>,
         do_not_connect_peers: Option<bool>,
         skip_device_lock: Option<bool>,
@@ -146,6 +147,7 @@ impl MutinyWallet {
             auth_url,
             subscription_url,
             storage_url,
+            auth_storage_url,
             do_not_connect_peers,
             skip_device_lock,
             safe_mode,
@@ -189,6 +191,7 @@ impl MutinyWallet {
         auth_url: Option<String>,
         subscription_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
         do_not_connect_peers: Option<bool>,
         skip_device_lock: Option<bool>,
         safe_mode: Option<bool>,
@@ -230,6 +233,16 @@ impl MutinyWallet {
 
         let (auth_client, vss_client) = if safe_mode {
             (None, None)
+        } else if auth_storage_url.is_none() {
+            let vss = storage_url.map(|url| {
+                Arc::new(MutinyVssClient::new_unauthenticated(
+                    url,
+                    xprivkey.private_key,
+                    logger.clone(),
+                ))
+            });
+
+            (None, vss)
         } else if let Some(auth_url) = auth_url.clone() {
             let auth_manager = AuthManager::new(xprivkey).unwrap();
 
@@ -252,16 +265,39 @@ impl MutinyWallet {
                 }
             });
 
-            let vss = storage_url.map(|url| {
-                Arc::new(MutinyVssClient::new_authenticated(
-                    auth_client.clone(),
-                    url,
-                    xprivkey.private_key,
-                    logger.clone(),
-                ))
-            });
+            if storage_url.is_none() {
+                let vss = auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
 
-            (Some(auth_client), vss)
+                (Some(auth_client), vss)
+            } else if has_used_storage_url() {
+                let vss = storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_unauthenticated(
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
+
+                (None, vss)
+            } else {
+                let vss = auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
+
+                (Some(auth_client), vss)
+            }
         } else {
             let vss = storage_url.map(|url| {
                 Arc::new(MutinyVssClient::new_unauthenticated(
@@ -1211,6 +1247,10 @@ impl MutinyWallet {
     }
 }
 
+fn has_used_storage_url() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use crate::utils::test::*;
@@ -1243,6 +1283,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1303,6 +1344,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1321,6 +1363,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1388,6 +1431,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1405,6 +1449,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1457,6 +1502,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1529,6 +1575,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1570,6 +1617,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1593,6 +1641,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1682,6 +1731,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1726,6 +1776,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
