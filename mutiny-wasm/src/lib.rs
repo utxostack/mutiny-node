@@ -19,7 +19,7 @@ use bip39::Mnemonic;
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::sha256;
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{Address, Network, OutPoint, Txid};
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
@@ -276,7 +276,13 @@ impl MutinyWallet {
                 });
 
                 (Some(auth_client), vss)
-            } else if has_used_storage_url() {
+            } else if has_used_storage_url(
+                storage_url.clone().unwrap(),
+                &xprivkey.private_key,
+                logger.clone(),
+            )
+            .await?
+            {
                 let vss = storage_url.map(|url| {
                     Arc::new(MutinyVssClient::new_unauthenticated(
                         url,
@@ -1247,8 +1253,20 @@ impl MutinyWallet {
     }
 }
 
-fn has_used_storage_url() -> bool {
-    true
+async fn has_used_storage_url(
+    url: String,
+    encryption_key: &SecretKey,
+    logger: Arc<MutinyLogger>,
+) -> Result<bool, MutinyJsError> {
+    let vss = MutinyVssClient::new_unauthenticated(url.clone(), *encryption_key, logger.clone());
+    log_info!(
+        logger,
+        "Reading from vss to check if it has been used before"
+    );
+    let keys = vss.list_key_versions(None).await?;
+    let has_used: bool = !keys.is_empty();
+    log_info!(logger, "Storage URL '{}' has been used: {}", url, has_used);
+    Ok(has_used)
 }
 
 #[cfg(test)]
