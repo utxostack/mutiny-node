@@ -174,13 +174,17 @@ impl MutinyAuthClient {
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::MutinyAuthClient;
+    use crate::authmanager::AuthManager;
     use crate::logging::MutinyLogger;
     use crate::test_utils::*;
     use crate::utils;
 
+    use bip39::Mnemonic;
+    use bitcoin::bip32::Xpriv;
     use bitcoin::hashes::{hex::prelude::*, sha256, Hash};
     use bitcoin::key::rand::Rng;
     use bitcoin::secp256k1::{self, rand::thread_rng, Message, PublicKey, Secp256k1};
+    use bitcoin::Network;
     use env_logger::Builder;
     use log::LevelFilter;
     use secp256k1::ecdsa::Signature;
@@ -188,6 +192,7 @@ mod tests {
     use serde_json::json;
     use warp::Filter;
 
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::sync::Once;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -319,5 +324,21 @@ mod tests {
         let ret = secp.verify_ecdsa(&msg, &signature, &pubkey);
 
         assert!(ret.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_lightning_pubkey() {
+        let mnemonic_str =
+            "drift main obtain birth salon coyote cream build pottery attack attend glue";
+        let mnemonic = Mnemonic::from_str(mnemonic_str).unwrap();
+
+        let seed = mnemonic.to_seed("");
+        let xprivkey = Xpriv::new_master(Network::Testnet, &seed).unwrap();
+        let auth = AuthManager::new(xprivkey).unwrap();
+        let pubkey_hex = format!("{:x}", auth.pubkey().serialize().as_hex());
+        assert_eq!(
+            pubkey_hex,
+            "037ff12d3f50e36df10d8a5d5bfcf678e6fa891ae87dc526026922f7b47ae8e2a7"
+        );
     }
 }
