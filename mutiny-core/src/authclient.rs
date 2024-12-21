@@ -11,7 +11,6 @@ use reqwest::{Method, StatusCode, Url};
 use serde_json::Value;
 
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct MutinyAuthClient {
     pub auth: AuthManager,
@@ -103,11 +102,7 @@ impl MutinyAuthClient {
         let jwt_url = self.url.clone();
 
         // message: timestamp + '-' + random data
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs()
-            - 1;
+        let timestamp = utils::now().as_secs() - 1;
         let random_data: u64 = thread_rng().gen_range(u32::MAX as u64..u64::MAX);
         let challenge = format!("{}-{}", timestamp, random_data);
 
@@ -181,6 +176,7 @@ mod tests {
     use super::MutinyAuthClient;
     use crate::logging::MutinyLogger;
     use crate::test_utils::*;
+    use crate::utils;
 
     use bitcoin::hashes::{hex::prelude::*, sha256, Hash};
     use bitcoin::key::rand::Rng;
@@ -288,11 +284,14 @@ mod tests {
         let (secret_key, pubkey) = secp.generate_keypair(&mut OsRng);
 
         // message: timestamp + '-' + random data
-        let timestamp = SystemTime::now()
+        let timestamp = utils::now().as_secs() - 1;
+        let timestamp_2 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs()
             - 1;
+        assert_eq!(timestamp, timestamp_2);
+
         let random_data: u64 = thread_rng().gen_range(u32::MAX as u64..u64::MAX);
         let challenge = format!("{}-{}", timestamp, random_data);
 
