@@ -233,7 +233,7 @@ impl MutinyWallet {
 
         let (auth_client, vss_client) = if safe_mode {
             (None, None)
-        } else if auth_storage_url.is_none() {
+        } else if auth_storage_url.is_none() || auth_url.is_none() {
             let vss = storage_url.map(|url| {
                 Arc::new(MutinyVssClient::new_unauthenticated(
                     url,
@@ -243,13 +243,13 @@ impl MutinyWallet {
             });
 
             (None, vss)
-        } else if let Some(auth_url) = auth_url.clone() {
+        } else {
             let auth_manager = AuthManager::new(xprivkey).unwrap();
 
             let auth_client = Arc::new(MutinyAuthClient::new(
                 auth_manager,
                 logger.clone(),
-                auth_url,
+                auth_url.unwrap(),
             ));
 
             // immediately start fetching JWT
@@ -304,16 +304,6 @@ impl MutinyWallet {
 
                 (Some(auth_client), vss)
             }
-        } else {
-            let vss = storage_url.map(|url| {
-                Arc::new(MutinyVssClient::new_unauthenticated(
-                    url,
-                    xprivkey.private_key,
-                    logger.clone(),
-                ))
-            });
-
-            (None, vss)
         };
 
         let storage =
@@ -409,8 +399,9 @@ impl MutinyWallet {
     pub async fn get_device_lock_remaining_secs(
         database: String,
         password: Option<String>,
-        _auth_url: Option<String>,
+        auth_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
     ) -> Result<Option<u64>, MutinyJsError> {
         let logger = Arc::new(MutinyLogger::default());
         let cipher = password
@@ -426,13 +417,70 @@ impl MutinyWallet {
         // Network doesn't matter here, only for encoding
         let xprivkey = Xpriv::new_master(Network::Bitcoin, &seed).unwrap();
 
-        let vss_client = storage_url.map(|url| {
-            Arc::new(MutinyVssClient::new_unauthenticated(
-                url,
-                xprivkey.private_key,
+        let vss_client = if auth_storage_url.is_none() || auth_url.is_none() {
+            storage_url.map(|url| {
+                Arc::new(MutinyVssClient::new_unauthenticated(
+                    url,
+                    xprivkey.private_key,
+                    logger.clone(),
+                ))
+            })
+        } else {
+            let auth_manager = AuthManager::new(xprivkey).unwrap();
+
+            let auth_client = Arc::new(MutinyAuthClient::new(
+                auth_manager,
                 logger.clone(),
-            ))
-        });
+                auth_url.unwrap(),
+            ));
+
+            // immediately start fetching JWT
+            let auth = auth_client.clone();
+            let logger_clone = logger.clone();
+            spawn(async move {
+                // if this errors, it's okay, we'll call it again when we fetch vss
+                if let Err(e) = auth.authenticate().await {
+                    log_warn!(
+                        logger_clone,
+                        "Failed to authenticate on startup, will retry on next call: {e}"
+                    );
+                }
+            });
+
+            if storage_url.is_none() {
+                auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            } else if has_used_storage_url(
+                storage_url.clone().unwrap(),
+                &xprivkey.private_key,
+                logger.clone(),
+            )
+            .await?
+            {
+                storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_unauthenticated(
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            } else {
+                auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            }
+        };
 
         if let Some(vss) = vss_client {
             let obj = vss.get_object(DEVICE_LOCK_KEY).await?;
