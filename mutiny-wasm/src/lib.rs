@@ -19,14 +19,16 @@ use bip39::Mnemonic;
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::sha256;
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{Address, Network, OutPoint, Txid};
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
 
-use lightning::{log_info, routing::gossip::NodeId, util::logger::Logger};
+use lightning::{log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
+use mutiny_core::authclient::MutinyAuthClient;
+use mutiny_core::authmanager::AuthManager;
 use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
 use mutiny_core::messagehandler::CommonLnEventCallback;
@@ -92,6 +94,7 @@ impl MutinyWallet {
         auth_url: Option<String>,
         subscription_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
         _scorer_url: Option<String>,
         do_not_connect_peers: Option<bool>,
         skip_device_lock: Option<bool>,
@@ -144,6 +147,7 @@ impl MutinyWallet {
             auth_url,
             subscription_url,
             storage_url,
+            auth_storage_url,
             do_not_connect_peers,
             skip_device_lock,
             safe_mode,
@@ -184,9 +188,10 @@ impl MutinyWallet {
         lsp_url: Option<String>,
         lsp_connection_string: Option<String>,
         lsp_token: Option<String>,
-        _auth_url: Option<String>,
+        auth_url: Option<String>,
         subscription_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
         do_not_connect_peers: Option<bool>,
         skip_device_lock: Option<bool>,
         safe_mode: Option<bool>,
@@ -226,16 +231,77 @@ impl MutinyWallet {
         let seed = mnemonic.to_seed("");
         let xprivkey = Xpriv::new_master(network, &seed).unwrap();
 
-        let vss_client = if safe_mode {
-            None
-        } else {
-            storage_url.map(|url| {
+        let (auth_client, vss_client) = if safe_mode {
+            (None, None)
+        } else if auth_storage_url.is_none() || auth_url.is_none() {
+            let vss = storage_url.map(|url| {
                 Arc::new(MutinyVssClient::new_unauthenticated(
                     url,
                     xprivkey.private_key,
                     logger.clone(),
                 ))
-            })
+            });
+
+            (None, vss)
+        } else {
+            let auth_manager = AuthManager::new(xprivkey).unwrap();
+
+            let auth_client = Arc::new(MutinyAuthClient::new(
+                auth_manager,
+                logger.clone(),
+                auth_url.unwrap(),
+            ));
+
+            // immediately start fetching JWT
+            let auth = auth_client.clone();
+            let logger_clone = logger.clone();
+            // if this errors, it's okay, we'll call it again when we fetch vss
+            if let Err(e) = auth.authenticate().await {
+                log_warn!(
+                    logger_clone,
+                    "Failed to authenticate on startup, will retry on next call: {e}"
+                );
+            }
+
+            if storage_url.is_none() {
+                let vss = auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
+
+                (Some(auth_client), vss)
+            } else if has_used_storage_url(
+                storage_url.clone().unwrap(),
+                &xprivkey.private_key,
+                logger.clone(),
+            )
+            .await?
+            {
+                let vss = storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_unauthenticated(
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
+
+                (None, vss)
+            } else {
+                let vss = auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                });
+
+                (Some(auth_client), vss)
+            }
         };
 
         let storage =
@@ -259,6 +325,9 @@ impl MutinyWallet {
         }
         if let Some(url) = lsp_token {
             config_builder.with_lsp_token(url);
+        }
+        if let Some(a) = auth_client {
+            config_builder.with_auth_client(a);
         }
         if let Some(url) = subscription_url {
             config_builder.with_subscription_url(url);
@@ -328,8 +397,9 @@ impl MutinyWallet {
     pub async fn get_device_lock_remaining_secs(
         database: String,
         password: Option<String>,
-        _auth_url: Option<String>,
+        auth_url: Option<String>,
         storage_url: Option<String>,
+        auth_storage_url: Option<String>,
     ) -> Result<Option<u64>, MutinyJsError> {
         let logger = Arc::new(MutinyLogger::default());
         let cipher = password
@@ -345,13 +415,68 @@ impl MutinyWallet {
         // Network doesn't matter here, only for encoding
         let xprivkey = Xpriv::new_master(Network::Bitcoin, &seed).unwrap();
 
-        let vss_client = storage_url.map(|url| {
-            Arc::new(MutinyVssClient::new_unauthenticated(
-                url,
-                xprivkey.private_key,
+        let vss_client = if auth_storage_url.is_none() || auth_url.is_none() {
+            storage_url.map(|url| {
+                Arc::new(MutinyVssClient::new_unauthenticated(
+                    url,
+                    xprivkey.private_key,
+                    logger.clone(),
+                ))
+            })
+        } else {
+            let auth_manager = AuthManager::new(xprivkey).unwrap();
+
+            let auth_client = Arc::new(MutinyAuthClient::new(
+                auth_manager,
                 logger.clone(),
-            ))
-        });
+                auth_url.unwrap(),
+            ));
+
+            // immediately start fetching JWT
+            let auth = auth_client.clone();
+            let logger_clone = logger.clone();
+            // if this errors, it's okay, we'll call it again when we fetch vss
+            if let Err(e) = auth.authenticate().await {
+                log_warn!(
+                    logger_clone,
+                    "Failed to authenticate on startup, will retry on next call: {e}"
+                );
+            }
+
+            if storage_url.is_none() {
+                auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            } else if has_used_storage_url(
+                storage_url.clone().unwrap(),
+                &xprivkey.private_key,
+                logger.clone(),
+            )
+            .await?
+            {
+                storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_unauthenticated(
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            } else {
+                auth_storage_url.map(|url| {
+                    Arc::new(MutinyVssClient::new_authenticated(
+                        auth_client.clone(),
+                        url,
+                        xprivkey.private_key,
+                        logger.clone(),
+                    ))
+                })
+            }
+        };
 
         if let Some(vss) = vss_client {
             let obj = vss.get_object(DEVICE_LOCK_KEY).await?;
@@ -1172,6 +1297,22 @@ impl MutinyWallet {
     }
 }
 
+async fn has_used_storage_url(
+    url: String,
+    encryption_key: &SecretKey,
+    logger: Arc<MutinyLogger>,
+) -> Result<bool, MutinyJsError> {
+    let vss = MutinyVssClient::new_unauthenticated(url.clone(), *encryption_key, logger.clone());
+    log_info!(
+        logger,
+        "Reading from vss to check if it has been used before"
+    );
+    let keys = vss.list_key_versions(None).await?;
+    let has_used: bool = !keys.is_empty();
+    log_info!(logger, "Storage URL '{}' has been used: {}", url, has_used);
+    Ok(has_used)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::utils::test::*;
@@ -1204,6 +1345,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1264,6 +1406,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1282,6 +1425,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1349,6 +1493,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1366,6 +1511,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1418,6 +1564,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1490,6 +1637,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1531,6 +1679,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1554,6 +1703,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1643,6 +1793,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1687,6 +1838,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
