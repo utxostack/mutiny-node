@@ -95,6 +95,8 @@ impl MutinyAuthClient {
         .await
     }
 
+    // TODO: Multiple concurrent `retrieve_new_jwt` calls could trigger multiple token refreshes.
+    // In a future PR, maybe we can add JWT parsing and validation before initiating a new token request.
     async fn retrieve_new_jwt(&self) -> Result<String, MutinyError> {
         let mut lock = self.jwt.write().await;
         log_debug!(self.logger, "Retrieving new JWT token");
