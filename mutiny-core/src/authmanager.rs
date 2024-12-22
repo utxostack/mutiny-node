@@ -7,7 +7,6 @@ use std::str::FromStr;
 #[derive(Clone)]
 pub struct AuthManager {
     hashing_key: SecretKey,
-    _xprivkey: Xpriv,
     context: Secp256k1<All>,
 }
 
@@ -28,14 +27,16 @@ impl AuthManager {
 
         Ok(Self {
             hashing_key,
-            _xprivkey: xprivkey,
             context,
         })
     }
 
-    pub fn sign(&self, k1: &[u8; 32]) -> Result<(ecdsa::Signature, PublicKey), MutinyError> {
+    pub fn sign(
+        &self,
+        message_hash: &[u8; 32],
+    ) -> Result<(ecdsa::Signature, PublicKey), MutinyError> {
         let pubkey = self.hashing_key.public_key(&self.context);
-        let msg = Message::from_digest_slice(k1).expect("32 bytes, guaranteed by type");
+        let msg = Message::from_digest_slice(message_hash).expect("32 bytes, guaranteed by type");
         let sig = self.context.sign_ecdsa(&msg, &self.hashing_key);
         Ok((sig, pubkey))
     }
