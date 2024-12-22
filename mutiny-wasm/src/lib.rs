@@ -33,7 +33,7 @@ use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
 use mutiny_core::messagehandler::CommonLnEventCallback;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
-use mutiny_core::utils::{sleep, spawn};
+use mutiny_core::utils::sleep;
 use mutiny_core::vss::MutinyVssClient;
 use mutiny_core::MutinyWalletBuilder;
 use mutiny_core::{
@@ -255,15 +255,13 @@ impl MutinyWallet {
             // immediately start fetching JWT
             let auth = auth_client.clone();
             let logger_clone = logger.clone();
-            spawn(async move {
-                // if this errors, it's okay, we'll call it again when we fetch vss
-                if let Err(e) = auth.authenticate().await {
-                    log_warn!(
-                        logger_clone,
-                        "Failed to authenticate on startup, will retry on next call: {e}"
-                    );
-                }
-            });
+            // if this errors, it's okay, we'll call it again when we fetch vss
+            if let Err(e) = auth.authenticate().await {
+                log_warn!(
+                    logger_clone,
+                    "Failed to authenticate on startup, will retry on next call: {e}"
+                );
+            }
 
             if storage_url.is_none() {
                 let vss = auth_storage_url.map(|url| {
@@ -437,15 +435,13 @@ impl MutinyWallet {
             // immediately start fetching JWT
             let auth = auth_client.clone();
             let logger_clone = logger.clone();
-            spawn(async move {
-                // if this errors, it's okay, we'll call it again when we fetch vss
-                if let Err(e) = auth.authenticate().await {
-                    log_warn!(
-                        logger_clone,
-                        "Failed to authenticate on startup, will retry on next call: {e}"
-                    );
-                }
-            });
+            // if this errors, it's okay, we'll call it again when we fetch vss
+            if let Err(e) = auth.authenticate().await {
+                log_warn!(
+                    logger_clone,
+                    "Failed to authenticate on startup, will retry on next call: {e}"
+                );
+            }
 
             if storage_url.is_none() {
                 auth_storage_url.map(|url| {
