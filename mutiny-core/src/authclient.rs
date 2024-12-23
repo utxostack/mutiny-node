@@ -111,7 +111,7 @@ impl MutinyAuthClient {
         let hashed_msg = sha256::Hash::hash(challenge.as_bytes());
         let (sig, pubkey) = self.auth.sign(hashed_msg.as_ref())?;
 
-        let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
+        let sig_hex = format!("{:x}", sig.serialize_der().as_hex());
         let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
 
         let response = self
@@ -309,7 +309,7 @@ mod tests {
 
         // hex
         let pubkey_hex = format!("{:x}", pubkey.serialize().as_hex());
-        let sig_hex = format!("{:x}", sig.serialize_compact().as_hex());
+        let sig_hex = format!("{:x}", sig.serialize_der().as_hex());
 
         // verify
         let signature_bytes = Vec::from_hex(&sig_hex).unwrap();
@@ -317,7 +317,7 @@ mod tests {
 
         let secp = Secp256k1::verification_only();
         let pubkey = PublicKey::from_slice(&public_key_bytes).unwrap();
-        let signature = Signature::from_compact(&signature_bytes).unwrap();
+        let signature = Signature::from_der(&signature_bytes).unwrap();
 
         // Hash the message before verifying (because the signature was created using the hashed message)
         let hashed_message = sha256::Hash::hash(challenge.as_bytes());
@@ -342,5 +342,50 @@ mod tests {
             pubkey_hex,
             "037ff12d3f50e36df10d8a5d5bfcf678e6fa891ae87dc526026922f7b47ae8e2a7"
         );
+    }
+
+    #[tokio::test]
+    async fn test_auth_manager_sign() {
+        let mnemonic_str =
+            "earn stem rate film cat mesh hold violin elite usage maze crane robot fan market sing pepper web collect spice decorate turn creek owner";
+        let mnemonic = Mnemonic::from_str(mnemonic_str).unwrap();
+
+        let seed = mnemonic.to_seed("");
+        let xprivkey = Xpriv::new_master(Network::Testnet, &seed).unwrap();
+        let auth = AuthManager::new(xprivkey).unwrap();
+        let pubkey_hex = format!("{:x}", auth.pubkey().serialize().as_hex());
+        assert_eq!(
+            pubkey_hex,
+            "037474ffe18d09f9a65030f8c01899eec41e1d4ee3dead23556c1a0f7863931e29"
+        );
+        println!("pubkey_hex: {}", pubkey_hex);
+
+        let timestamp = utils::now().as_secs() - 1;
+        let random_data: u64 = thread_rng().gen_range(u32::MAX as u64..u64::MAX);
+        let challenge = format!("{}-{}", timestamp, random_data);
+
+        let hashed_msg = sha256::Hash::hash(challenge.as_bytes());
+        let (sig, pubkey) = auth.sign(hashed_msg.as_ref()).unwrap();
+        assert_eq!(format!("{:x}", pubkey.serialize().as_hex()), pubkey_hex);
+
+        let sig_hex = format!("{:x}", sig.serialize_der().as_hex());
+        println!("sig_hex: {}", sig_hex);
+        println!("pubkey_hex2: {}", pubkey_hex);
+
+        // verify
+        let signature_bytes = Vec::from_hex(&sig_hex).unwrap();
+        let public_key_bytes = Vec::from_hex(&pubkey_hex).unwrap();
+
+        let secp = Secp256k1::verification_only();
+        let pubkey = PublicKey::from_slice(&public_key_bytes).unwrap();
+        let signature = Signature::from_der(&signature_bytes).unwrap();
+
+        // Hash the message before verifying (because the signature was created using the hashed message)
+        let hashed_message = sha256::Hash::hash(challenge.as_bytes());
+        let msg = Message::from_digest_slice(hashed_message.as_ref()).unwrap();
+
+        let ret = secp.verify_ecdsa(&msg, &signature, &pubkey);
+
+        assert!(ret.is_ok());
     }
 }
