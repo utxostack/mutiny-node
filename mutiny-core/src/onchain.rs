@@ -363,11 +363,6 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                 if wallet.get_tx(txid).is_none() {
                     // insert tx and commit changes
                     wallet.apply_unconfirmed_txs(vec![(tx, last_seen)]);
-                    log_debug!(
-                        self.logger,
-                        "After inserting tx, the tx_graph: ({:?})",
-                        wallet.tx_graph()
-                    )
                 } else {
                     log_debug!(
                         self.logger,
