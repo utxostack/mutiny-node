@@ -873,7 +873,13 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 if let Err(e) = storage_clone.set_device_lock(&logger_clone) {
                     log_error!(logger_clone, "Error setting device lock: {e}");
                 }
-                sleep((DEVICE_LOCK_INTERVAL_SECS * 1_000) as i32).await;
+
+                let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32;
+                while !stop_signal.stopping() && remained_sleep_ms > 0 {
+                    let sleep_ms = 300;
+                    sleep(sleep_ms).await;
+                    remained_sleep_ms -= sleep_ms;
+                }
             }
         });
         log_trace!(logger, "finished spawning claim device lock");
