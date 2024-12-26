@@ -500,6 +500,7 @@ impl MutinyWallet {
     #[wasm_bindgen]
     pub async fn stop(&mut self) -> Result<(), MutinyJsError> {
         // Ok(self.inner.node_manager.stop().await?)
+        uninit();
         Ok(self.inner.stop().await?)
     }
 
