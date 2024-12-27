@@ -840,19 +840,36 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             let device_id = self.storage.get_device_id()?;
             let max_retries = 10;
             let mut retries = 0;
-            while !self
-                .storage
-                .fetch_device_lock()
-                .await?
-                .is_some_and(|lock| lock.is_last_locker(&device_id))
-            {
+            while retries <= max_retries {
                 log_info!(logger, "Waiting device lock syncing... {retries}");
+
+                match self.storage.fetch_device_lock().await {
+                    Ok(lock_option) => {
+                        if let Some(lock) = lock_option {
+                            if lock.is_last_locker(&device_id) {
+                                break;
+                            }
+                        }
+                    }
+                    Err(MutinyError::FailedParsingVssValue) => {
+                        log_info!(logger, "Failed to parse VSS value, retrying... {retries}");
+                    }
+                    Err(e) => {
+                        log_error!(logger, "Error fetching device lock: {:?}", e);
+                        return Err(e);
+                    }
+                }
+
                 retries += 1;
+
                 if retries > max_retries {
-                    log_error!(logger, "Can't syncing device lock to VSS");
+                    log_error!(
+                        logger,
+                        "Can't sync device lock to VSS after {max_retries} attempts"
+                    );
                     return Err(MutinyError::AlreadyRunning);
                 }
-                sleep(300).await
+                sleep(300).await;
             }
         }
         log_debug!(logger, "finished checking device lock");
