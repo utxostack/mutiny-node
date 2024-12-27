@@ -168,7 +168,7 @@ impl MutinyVssClient {
             .await
             .map_err(|e| {
                 log_error!(self.logger, "Error parsing get objects response: {e}");
-                MutinyError::Other(anyhow!("Error parsing get objects response: {e}"))
+                MutinyError::FailedParsingVssValue
             })?;
 
         result.decrypt(&self.encryption_key)
