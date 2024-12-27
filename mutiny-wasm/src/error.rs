@@ -186,6 +186,8 @@ pub enum MutinyJsError {
     InvalidHex,
     #[error("JWT Auth Failure")]
     JwtAuthFailure,
+    #[error("Failed to parse VSS value from getObject response.")]
+    FailedParsingVssValue,
     /// Unknown error.
     #[error("Unknown Error")]
     UnknownError,
@@ -252,6 +254,7 @@ impl From<MutinyError> for MutinyJsError {
             MutinyError::InvalidPsbt => MutinyJsError::InvalidPsbt,
             MutinyError::InvalidHex => MutinyJsError::InvalidHex,
             MutinyError::JwtAuthFailure => MutinyJsError::JwtAuthFailure,
+            MutinyError::FailedParsingVssValue => MutinyJsError::FailedParsingVssValue,
         }
     }
 }

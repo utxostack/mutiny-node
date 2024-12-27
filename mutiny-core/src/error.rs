@@ -176,6 +176,8 @@ pub enum MutinyError {
     /// Failed to authenticate using JWT
     #[error("Failed to authenticate using JWT.")]
     JwtAuthFailure,
+    #[error("Failed to parse VSS value from getObject response.")]
+    FailedParsingVssValue,
     #[error(transparent)]
     Other(anyhow::Error),
 }
