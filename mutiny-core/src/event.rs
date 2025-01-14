@@ -722,6 +722,23 @@ impl<S: MutinyStorage> EventHandler<S> {
                         timestamp,
                         hex_tx
                     );
+
+                    // Leverages the `BumpTransactionEvent::ChannelClose` mechanism to automatically retry
+                    // rebroadcasting the commitment transaction if the initial broadcast fails.
+                    // This operation has almost no side effects, as broadcasting the same transaction multiple times
+                    // does not alter its state or the blockchain, and nodes will simply ignore duplicate broadcasts.
+                    log_debug!(
+                        self.logger,
+                        "Trying rebroadcast for commitment tx transaction: {event:?}"
+                    );
+                    if let Err(e) = self
+                        .wallet
+                        .broadcast_transaction(commitment_tx.clone())
+                        .await
+                    {
+                        log_error!(self.logger, "Failed to rebroadcast commitment tx: {e}");
+                    }
+
                     if self.do_not_bump_channel_closed_tx {
                         log_debug!(self.logger, "Skip channel close transaction");
                     } else {
