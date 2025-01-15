@@ -95,6 +95,8 @@ use web_time::Instant;
 const INITIAL_RECONNECTION_DELAY: u64 = 2;
 const MAX_RECONNECTION_DELAY: u64 = 60;
 
+pub(crate) type PendingConnections = Arc<async_lock::RwLock<HashMap<NodeId, u32>>>;
+
 pub(crate) type BumpTxEventHandler<S: MutinyStorage> = BumpTransactionEventHandler<
     Arc<MutinyChain<S>>,
     Arc<Wallet<Arc<OnChainWallet<S>>, Arc<MutinyLogger>>>,
@@ -844,6 +846,8 @@ impl<S: MutinyStorage> NodeBuilder<S> {
         });
         log_trace!(logger, "finished spawning ldk background thread");
 
+        let pending_connections = Arc::new(async_lock::RwLock::new(Default::default()));
+
         if !self.do_not_connect_peers {
             #[cfg(target_arch = "wasm32")]
             let reconnection_proxy_addr = websocket_proxy_addr.clone();
@@ -859,6 +863,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             let reconnection_stop = stop.clone();
             let reconnection_stopped_comp = stopped_components.clone();
             reconnection_stopped_comp.try_write()?.push(false);
+            let pending_connections = pending_connections.clone();
             utils::spawn(async move {
                 start_reconnection_handling(
                     &reconnection_storage,
@@ -866,6 +871,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
                     #[cfg(target_arch = "wasm32")]
                     reconnection_proxy_addr,
                     reconnection_peer_man,
+                    pending_connections,
                     reconnection_fee,
                     &reconnection_logger,
                     reconnection_uuid,
@@ -1002,6 +1008,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             child_index: node_index.child_index,
             pubkey,
             peer_manager: peer_man,
+            pending_connections,
             keys_manager,
             channel_manager,
             chain_monitor,
@@ -1026,6 +1033,7 @@ pub(crate) struct Node<S: MutinyStorage> {
     stopped_components: Arc<RwLock<Vec<bool>>>,
     pub pubkey: PublicKey,
     pub peer_manager: Arc<PeerManagerImpl<S>>,
+    pub pending_connections: PendingConnections,
     pub keys_manager: Arc<PhantomKeysManager<S>>,
     pub channel_manager: Arc<PhantomChannelManager<S>>,
     pub chain_monitor: Arc<ChainMonitor<S>>,
@@ -1112,6 +1120,7 @@ impl<S: MutinyStorage> Node<S> {
             &self.persister.storage,
             self.logger.clone(),
             self.peer_manager.clone(),
+            self.pending_connections.clone(),
             self.fee_estimator.clone(),
             self.stop.clone(),
         )
@@ -2249,6 +2258,7 @@ async fn start_reconnection_handling<S: MutinyStorage>(
     node_pubkey: PublicKey,
     #[cfg(target_arch = "wasm32")] websocket_proxy_addr: String,
     peer_man: Arc<PeerManagerImpl<S>>,
+    pending_connections: PendingConnections,
     fee_estimator: Arc<MutinyFeeEstimator<S>>,
     logger: &Arc<MutinyLogger>,
     uuid: String,
@@ -2303,6 +2313,7 @@ async fn start_reconnection_handling<S: MutinyStorage>(
                 &storage_copy,
                 proxy_logger.clone(),
                 peer_man_proxy.clone(),
+                pending_connections.clone(),
                 proxy_fee_estimator.clone(),
                 stop_copy.clone(),
             )
@@ -2335,6 +2346,7 @@ async fn start_reconnection_handling<S: MutinyStorage>(
                                     &storage_copy,
                                     proxy_logger.clone(),
                                     peer_man_proxy.clone(),
+                                    pending_connections.clone(),
                                     proxy_fee_estimator.clone(),
                                     stop_copy.clone(),
                                 )
@@ -2395,6 +2407,7 @@ async fn start_reconnection_handling<S: MutinyStorage>(
                 &storage_copy,
                 proxy_logger.clone(),
                 peer_man_proxy.clone(),
+                pending_connections.clone(),
                 proxy_fee_estimator.clone(),
                 stop.clone(),
             )
@@ -2505,6 +2518,7 @@ async fn start_reconnection_handling<S: MutinyStorage>(
                     &storage_copy,
                     proxy_logger.clone(),
                     peer_man_proxy.clone(),
+                    pending_connections.clone(),
                     proxy_fee_estimator.clone(),
                     stop.clone(),
                 )

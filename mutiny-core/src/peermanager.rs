@@ -2,8 +2,9 @@ use crate::keymanager::PhantomKeysManager;
 use crate::messagehandler::MutinyMessageHandler;
 #[cfg(target_arch = "wasm32")]
 use crate::networking::socket::{schedule_descriptor_read, MutinySocketDescriptor};
-use crate::node::{NetworkGraph, OnionMessenger};
+use crate::node::{NetworkGraph, OnionMessenger, PendingConnections};
 use crate::storage::MutinyStorage;
+use crate::utils;
 use crate::{error::MutinyError, fees::MutinyFeeEstimator};
 use crate::{gossip, ldkstorage::PhantomChannelManager, logging::MutinyLogger};
 use crate::{gossip::read_peer_info, node::PubkeyConnectionInfo};
@@ -356,6 +357,7 @@ impl MessageRouter for LspMessageRouter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn connect_peer_if_necessary<
     S: MutinyStorage,
     P: PeerManager + APeerManager<Descriptor = AnySocketDescriptor>,
@@ -365,97 +367,121 @@ pub(crate) async fn connect_peer_if_necessary<
     storage: &S,
     logger: Arc<MutinyLogger>,
     peer_manager: Arc<P>,
+    pending_connections: PendingConnections,
     fee_estimator: Arc<MutinyFeeEstimator<S>>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), MutinyError> {
+    // do not connect to same peer within 5 secs
+    const IGNORE_CONN_SECS: u32 = 5;
+
     if peer_manager
         .get_peer_node_ids()
         .contains(&peer_connection_info.pubkey)
     {
-        Ok(())
-    } else {
-        // make sure we have the device lock before connecting
-        // otherwise we could cause force closes.
-        // If we didn't have the lock last, we need to panic because
-        // the state could have changed.
-        if let Some(lock) = storage.fetch_device_lock().await? {
-            let id = storage.get_device_id()?;
-            if !lock.is_last_locker(&id) {
-                log_warn!(
-                    logger,
-                    "Lock has changed (remote: {}, local: {})! Aborting since state could be outdated",
-                    lock.device,
-                    id
-                );
-                panic!("Lock has changed! Aborting since state could be outdated")
-            }
-        }
-
-        // first check to see if the fee rate is mostly up to date
-        // if not, we need to have updated fees or force closures
-        // could occur due to UpdateFee message conflicts.
-        fee_estimator.update_fee_estimates_if_necessary().await?;
-
-        #[cfg(target_arch = "wasm32")]
-        let ret = connect_peer(
-            #[cfg(target_arch = "wasm32")]
-            websocket_proxy_addr,
-            peer_connection_info,
-            logger,
-            peer_manager,
-            stop,
-        )
-        .await;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let ret = match lightning_net_tokio::connect_outbound(
-            peer_manager.clone(),
-            peer_connection_info.pubkey,
-            peer_connection_info.socket_address()?,
-        )
-        .await
-        {
-            None => {
-                lightning::log_error!(
-                    logger,
-                    "Connection to peer timed out: {:?}",
-                    peer_connection_info
-                );
-                Err(MutinyError::ConnectionFailed)
-            }
-            Some(connection_closed_future) => {
-                // spawn a task to wait for the connection to close
-                let mut connection_closed_future = Box::pin(connection_closed_future);
-                let pubkey = peer_connection_info.pubkey;
-                crate::utils::spawn(async move {
-                    loop {
-                        // If we are stopped, exit the loop
-                        if stop.load(std::sync::atomic::Ordering::Relaxed) {
-                            break;
-                        }
-
-                        tokio::select! {
-                            _ = &mut connection_closed_future => break,
-                            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
-                        }
-
-                        // make sure they are still a peer
-                        if peer_manager
-                            .get_peer_node_ids()
-                            .iter()
-                            .any(|id| *id == pubkey)
-                        {
-                            break;
-                        }
-                    }
-                });
-
-                Ok(())
-            }
-        };
-
-        ret
+        return Ok(());
     }
+
+    let node_id = NodeId::from_pubkey(&peer_connection_info.pubkey);
+    let pending = pending_connections.read().await;
+    let now_secs = utils::now().as_secs() as u32;
+    let pending_expire_secs = now_secs - IGNORE_CONN_SECS;
+    if pending
+        .get(&node_id)
+        .is_some_and(|&last| pending_expire_secs < last)
+    {
+        return Ok(());
+    }
+
+    // save pending connections
+    let mut pending = pending_connections.write().await;
+    pending.insert(node_id, now_secs);
+
+    // clear expired pending connections
+    if pending.len() > 20 {
+        pending.retain(|_, last| pending_expire_secs < *last);
+    }
+
+    // make sure we have the device lock before connecting
+    // otherwise we could cause force closes.
+    // If we didn't have the lock last, we need to panic because
+    // the state could have changed.
+    if let Some(lock) = storage.fetch_device_lock().await? {
+        let id = storage.get_device_id()?;
+        if !lock.is_last_locker(&id) {
+            log_warn!(
+                logger,
+                "Lock has changed (remote: {}, local: {})! Aborting since state could be outdated",
+                lock.device,
+                id
+            );
+            panic!("Lock has changed! Aborting since state could be outdated")
+        }
+    }
+
+    // first check to see if the fee rate is mostly up to date
+    // if not, we need to have updated fees or force closures
+    // could occur due to UpdateFee message conflicts.
+    fee_estimator.update_fee_estimates_if_necessary().await?;
+
+    #[cfg(target_arch = "wasm32")]
+    let ret = connect_peer(
+        #[cfg(target_arch = "wasm32")]
+        websocket_proxy_addr,
+        peer_connection_info,
+        logger,
+        peer_manager,
+        stop,
+    )
+    .await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let ret = match lightning_net_tokio::connect_outbound(
+        peer_manager.clone(),
+        peer_connection_info.pubkey,
+        peer_connection_info.socket_address()?,
+    )
+    .await
+    {
+        None => {
+            lightning::log_error!(
+                logger,
+                "Connection to peer timed out: {:?}",
+                peer_connection_info
+            );
+            Err(MutinyError::ConnectionFailed)
+        }
+        Some(connection_closed_future) => {
+            // spawn a task to wait for the connection to close
+            let mut connection_closed_future = Box::pin(connection_closed_future);
+            let pubkey = peer_connection_info.pubkey;
+            crate::utils::spawn(async move {
+                loop {
+                    // If we are stopped, exit the loop
+                    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+
+                    tokio::select! {
+                        _ = &mut connection_closed_future => break,
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                    }
+
+                    // make sure they are still a peer
+                    if peer_manager
+                        .get_peer_node_ids()
+                        .iter()
+                        .any(|id| *id == pubkey)
+                    {
+                        break;
+                    }
+                }
+            });
+
+            Ok(())
+        }
+    };
+
+    ret
 }
 
 #[cfg(target_arch = "wasm32")]
