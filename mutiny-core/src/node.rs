@@ -95,7 +95,7 @@ use web_time::Instant;
 const INITIAL_RECONNECTION_DELAY: u64 = 2;
 const MAX_RECONNECTION_DELAY: u64 = 60;
 
-pub(crate) type PendingConnections = Arc<async_lock::RwLock<HashMap<NodeId, u32>>>;
+pub(crate) type PendingConnections = Arc<Mutex<HashMap<NodeId, u32>>>;
 
 pub(crate) type BumpTxEventHandler<S: MutinyStorage> = BumpTransactionEventHandler<
     Arc<MutinyChain<S>>,
@@ -846,7 +846,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
         });
         log_trace!(logger, "finished spawning ldk background thread");
 
-        let pending_connections = Arc::new(async_lock::RwLock::new(Default::default()));
+        let pending_connections = Arc::new(Mutex::new(Default::default()));
 
         if !self.do_not_connect_peers {
             #[cfg(target_arch = "wasm32")]
