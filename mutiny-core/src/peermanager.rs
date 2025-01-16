@@ -4,7 +4,7 @@ use crate::messagehandler::MutinyMessageHandler;
 use crate::networking::socket::{schedule_descriptor_read, MutinySocketDescriptor};
 use crate::node::{NetworkGraph, OnionMessenger, PendingConnections};
 use crate::storage::MutinyStorage;
-use crate::utils;
+use crate::utils::{self, sleep};
 use crate::{error::MutinyError, fees::MutinyFeeEstimator};
 use crate::{gossip, ldkstorage::PhantomChannelManager, logging::MutinyLogger};
 use crate::{gossip::read_peer_info, node::PubkeyConnectionInfo};
@@ -382,23 +382,43 @@ pub(crate) async fn connect_peer_if_necessary<
     }
 
     let node_id = NodeId::from_pubkey(&peer_connection_info.pubkey);
-    let pending = pending_connections.read().await;
-    let now_secs = utils::now().as_secs() as u32;
-    let pending_expire_secs = now_secs - IGNORE_CONN_SECS;
-    if pending
-        .get(&node_id)
-        .is_some_and(|&last| pending_expire_secs < last)
-    {
-        return Ok(());
-    }
 
-    // save pending connections
-    let mut pending = pending_connections.write().await;
-    pending.insert(node_id, now_secs);
+    let mut retries = 0;
+    let max_retries = 10;
+    while retries < max_retries {
+        match pending_connections.try_lock() {
+            Some(mut pending) => {
+                log::debug!("get pending connections");
+                let now_secs = utils::now().as_secs() as u32;
+                let pending_expire_secs = now_secs - IGNORE_CONN_SECS;
+                if pending
+                    .get(&node_id)
+                    .is_some_and(|&last| pending_expire_secs < last)
+                {
+                    log::debug!("Ignoring connection request to {node_id}");
+                    return Ok(());
+                }
 
-    // clear expired pending connections
-    if pending.len() > 20 {
-        pending.retain(|_, last| pending_expire_secs < *last);
+                // save pending connections
+                pending.insert(node_id, now_secs);
+
+                // clear expired pending connections
+                if pending.len() > 20 {
+                    pending.retain(|_, last| pending_expire_secs < *last);
+                }
+                break;
+            }
+            None if retries > max_retries => {
+                log::error!("Can't get pending connections lock");
+                return Err(MutinyError::ConnectionFailed);
+            }
+            None => {
+                retries += 1;
+                log::debug!("Can't get pending connections lock {retries}");
+                sleep(200).await;
+                continue;
+            }
+        };
     }
 
     // make sure we have the device lock before connecting
