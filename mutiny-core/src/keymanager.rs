@@ -12,7 +12,7 @@ use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing};
-use bitcoin::{ScriptBuf, Transaction, TxOut};
+use bitcoin::{Address, ScriptBuf, Transaction, TxOut};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::offers::invoice::UnsignedBolt12Invoice;
@@ -68,8 +68,11 @@ impl<S: MutinyStorage> PhantomKeysManager<S> {
         feerate_sat_per_1000_weight: u32,
         locktime: Option<LockTime>,
         secp_ctx: &Secp256k1<C>,
+        sweep_target_address: Option<Address>,
     ) -> Result<Transaction, ()> {
-        let address = {
+        let address = if let Some(address) = sweep_target_address {
+            address
+        } else {
             let mut wallet = self.wallet.wallet.try_write().map_err(|_| ())?;
             // These often fail because we continually retry these. Use LastUnused so we don't generate a ton of new
             // addresses for no reason.
