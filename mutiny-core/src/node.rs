@@ -33,6 +33,7 @@ use crate::{messagehandler::MutinyMessageHandler, storage::read_payment_info};
 use anyhow::{anyhow, Context};
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::Address;
 use bitcoin::{hashes::Hash, secp256k1::PublicKey, FeeRate, Network, OutPoint};
 use core::time::Duration;
 use esplora_client::AsyncClient;
@@ -211,6 +212,7 @@ pub struct NodeBuilder<S: MutinyStorage> {
     logger: Option<Arc<MutinyLogger>>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
+    sweep_target_address: Option<Address>,
 }
 
 impl<S: MutinyStorage> NodeBuilder<S> {
@@ -235,6 +237,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             network: None,
             do_not_connect_peers: false,
             do_not_bump_channel_close_tx: false,
+            sweep_target_address: None,
         }
     }
 
@@ -326,6 +329,10 @@ impl<S: MutinyStorage> NodeBuilder<S> {
 
     pub fn do_not_bump_channel_close_tx(&mut self) {
         self.do_not_bump_channel_close_tx = true;
+    }
+
+    pub fn with_sweep_target_address(&mut self, sweep_target_address: Address) {
+        self.sweep_target_address = Some(sweep_target_address);
     }
 
     pub fn log_params(&self, logger: &Arc<MutinyLogger>) {
@@ -603,6 +610,12 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             log_info!(logger, "Disable bump for channel close transaction");
         }
 
+        log_info!(
+            logger,
+            "Sweep target address: {:?}",
+            self.sweep_target_address
+        );
+
         let event_handler = EventHandler::new(
             channel_manager.clone(),
             fee_estimator.clone(),
@@ -613,6 +626,7 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             lsp_client.clone(),
             logger.clone(),
             self.do_not_bump_channel_close_tx,
+            self.sweep_target_address,
             self.ln_event_callback.clone(),
         );
         log_trace!(logger, "finished creating event handler");

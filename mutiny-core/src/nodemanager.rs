@@ -435,6 +435,10 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
                     node_builder.do_not_bump_channel_close_tx();
                 }
 
+                if let Some(ref address) = c.sweep_target_address {
+                    node_builder.with_sweep_target_address(address.clone());
+                }
+
                 let node = node_builder.build().await?;
 
                 let id = node
@@ -505,6 +509,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             logger,
             do_not_connect_peers: c.do_not_connect_peers,
             do_not_bump_channel_close_tx: c.do_not_bump_channel_close_tx,
+            sweep_target_address: c.sweep_target_address,
             safe_mode: c.safe_mode,
             has_done_initial_ldk_sync,
         };
@@ -541,6 +546,7 @@ pub struct NodeManager<S: MutinyStorage> {
     pub(crate) logger: Arc<MutinyLogger>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
+    sweep_target_address: Option<Address>,
     pub safe_mode: bool,
     /// If we've completed an initial sync this instance
     pub(crate) has_done_initial_ldk_sync: Arc<AtomicBool>,
@@ -2017,6 +2023,10 @@ pub(crate) async fn create_new_node_from_node_manager<S: MutinyStorage>(
 
     if node_manager.do_not_bump_channel_close_tx {
         node_builder.do_not_bump_channel_close_tx();
+    }
+
+    if let Some(ref address) = node_manager.sweep_target_address {
+        node_builder.with_sweep_target_address(address.clone());
     }
 
     let new_node = node_builder.build().await?;
