@@ -101,6 +101,7 @@ impl MutinyWallet {
         safe_mode: Option<bool>,
         skip_hodl_invoices: Option<bool>,
         do_not_bump_channel_close_tx: Option<bool>,
+        sweep_target_address: Option<String>,
         nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
@@ -153,6 +154,7 @@ impl MutinyWallet {
             safe_mode,
             skip_hodl_invoices,
             do_not_bump_channel_close_tx,
+            sweep_target_address,
             nip_07_key,
             blind_auth_url,
             hermes_url,
@@ -197,6 +199,7 @@ impl MutinyWallet {
         safe_mode: Option<bool>,
         skip_hodl_invoices: Option<bool>,
         do_not_bump_channel_close_tx: Option<bool>,
+        sweep_target_address: Option<String>,
         _nip_07_key: Option<String>,
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
@@ -349,6 +352,10 @@ impl MutinyWallet {
         }
         if let Some(true) = do_not_bump_channel_close_tx {
             config_builder.do_not_bump_channel_close_tx();
+        }
+        if let Some(ref address) = sweep_target_address {
+            let send_to = Address::from_str(address)?.require_network(network)?;
+            config_builder.with_sweep_target_address(send_to);
         }
         if safe_mode {
             config_builder.with_safe_mode();
@@ -1369,6 +1376,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1412,6 +1420,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1430,6 +1439,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1499,6 +1509,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1516,6 +1527,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1569,6 +1581,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1643,6 +1656,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1685,6 +1699,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1708,6 +1723,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1799,6 +1815,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1843,6 +1860,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,

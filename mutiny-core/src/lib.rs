@@ -536,6 +536,7 @@ pub struct MutinyWalletConfigBuilder {
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
+    sweep_target_address: Option<Address>,
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
@@ -559,6 +560,7 @@ impl MutinyWalletConfigBuilder {
             hermes_url: None,
             do_not_connect_peers: false,
             do_not_bump_channel_close_tx: false,
+            sweep_target_address: None,
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
@@ -620,6 +622,10 @@ impl MutinyWalletConfigBuilder {
         self.do_not_bump_channel_close_tx = true;
     }
 
+    pub fn with_sweep_target_address(&mut self, sweep_target_address: Address) {
+        self.sweep_target_address = Some(sweep_target_address);
+    }
+
     pub fn with_skip_device_lock(&mut self) {
         self.skip_device_lock = true;
     }
@@ -652,6 +658,7 @@ impl MutinyWalletConfigBuilder {
             hermes_url: self.hermes_url,
             do_not_connect_peers: self.do_not_connect_peers,
             do_not_bump_channel_close_tx: self.do_not_bump_channel_close_tx,
+            sweep_target_address: self.sweep_target_address,
             skip_device_lock: self.skip_device_lock,
             safe_mode: self.safe_mode,
             skip_hodl_invoices: self.skip_hodl_invoices,
@@ -676,6 +683,7 @@ pub struct MutinyWalletConfig {
     hermes_url: Option<String>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
+    sweep_target_address: Option<Address>,
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
@@ -694,6 +702,7 @@ pub struct MutinyWalletBuilder<S: MutinyStorage> {
     subscription_url: Option<String>,
     do_not_connect_peers: bool,
     do_not_bump_channel_close_tx: bool,
+    sweep_target_address: Option<Address>,
     skip_hodl_invoices: bool,
     skip_device_lock: bool,
     safe_mode: bool,
@@ -715,6 +724,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             ln_event_callback: None,
             do_not_connect_peers: false,
             do_not_bump_channel_close_tx: false,
+            sweep_target_address: None,
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
@@ -726,6 +736,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         self.network = Some(config.network);
         self.do_not_connect_peers = config.do_not_connect_peers;
         self.do_not_bump_channel_close_tx = config.do_not_bump_channel_close_tx;
+        self.sweep_target_address = config.sweep_target_address.clone();
         self.skip_hodl_invoices = config.skip_hodl_invoices;
         self.skip_device_lock = config.skip_device_lock;
         self.safe_mode = config.safe_mode;
@@ -775,6 +786,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
     pub fn do_not_bump_channel_close_tx(&mut self) {
         self.do_not_bump_channel_close_tx = true;
+    }
+
+    pub fn with_sweep_target_address(&mut self, sweep_target_address: Address) {
+        self.sweep_target_address = Some(sweep_target_address);
     }
 
     pub fn do_not_skip_hodl_invoices(&mut self) {

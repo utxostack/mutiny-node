@@ -101,6 +101,7 @@ pub struct EventHandler<S: MutinyStorage> {
     lsp_client: Option<AnyLsp<S>>,
     logger: Arc<MutinyLogger>,
     do_not_bump_channel_closed_tx: bool,
+    sweep_target_address: Option<bitcoin::Address>,
     ln_event_callback: Option<CommonLnEventCallback>,
 }
 
@@ -116,6 +117,7 @@ impl<S: MutinyStorage> EventHandler<S> {
         lsp_client: Option<AnyLsp<S>>,
         logger: Arc<MutinyLogger>,
         do_not_bump_channel_closed_tx: bool,
+        sweep_target_address: Option<bitcoin::Address>,
         ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Self {
         Self {
@@ -128,6 +130,7 @@ impl<S: MutinyStorage> EventHandler<S> {
             bump_tx_event_handler,
             logger,
             do_not_bump_channel_closed_tx,
+            sweep_target_address,
             ln_event_callback,
         }
     }
