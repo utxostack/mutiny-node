@@ -873,6 +873,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                 tx_feerate,
                 locktime,
                 &Secp256k1::new(),
+                self.sweep_target_address.clone(),
             )
             .map_err(|_| anyhow!("Failed to spend spendable outputs"))?;
 
