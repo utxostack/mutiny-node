@@ -398,6 +398,15 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
             "{CHANNEL_CLOSURE_PREFIX}{}",
             user_channel_id.to_be_bytes().to_lower_hex_string()
         ));
+
+        let force_close_spend_delay = self
+            .storage
+            .get_channel_closure(&key)?
+            .map(|c| c.force_close_spend_delay)
+            .flatten();
+        let mut closure = closure;
+        closure.set_force_close_spend_delay(force_close_spend_delay);
+
         self.storage
             .write_data(key.clone(), &closure, Some(closure.timestamp as u32))?;
 

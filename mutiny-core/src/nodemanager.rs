@@ -187,6 +187,7 @@ pub struct ChannelClosure {
     pub timestamp: u64,
     #[serde(default)]
     pub channel_funding_txo: Option<OutPoint>,
+    pub force_close_spend_delay: Option<u16>,
 }
 
 impl ChannelClosure {
@@ -206,6 +207,25 @@ impl ChannelClosure {
             node_id,
             reason: reason.to_string(),
             timestamp: utils::now().as_secs(),
+            force_close_spend_delay: None,
+        }
+    }
+
+    pub fn new_placeholder(
+        user_channel_id: u128,
+        channel_id: ChannelId,
+        channel_funding_txo: OutPoint,
+        node_id: PublicKey,
+        force_close_spend_delay: Option<u16>,
+    ) -> Self {
+        Self {
+            user_channel_id: Some(user_channel_id.to_be_bytes()),
+            channel_id: Some(channel_id.0),
+            channel_funding_txo: Some(channel_funding_txo),
+            node_id: Some(node_id),
+            reason: "".to_string(),
+            timestamp: 0,
+            force_close_spend_delay,
         }
     }
 
@@ -223,6 +243,14 @@ impl ChannelClosure {
         self.user_channel_id = Some(user_channel_id);
 
         Ok(())
+    }
+
+    pub fn set_force_close_spend_delay(&mut self, delay: Option<u16>) {
+        if self.force_close_spend_delay.is_some() {
+            return;
+        }
+
+        self.force_close_spend_delay = delay;
     }
 }
 
