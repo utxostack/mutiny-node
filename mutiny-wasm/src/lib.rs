@@ -970,6 +970,7 @@ impl MutinyWallet {
             .list_channel_closures()
             .await?
             .into_iter()
+            .filter(|closure| closure.timestamp != 0)
             .map(Into::into)
             .collect();
         channel_closures.sort();

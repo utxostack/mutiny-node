@@ -2423,6 +2423,7 @@ mod tests {
             reason: "".to_string(),
             timestamp: 1686258926,
             channel_funding_txo: None,
+            force_close_spend_delay: None,
         };
 
         let tx1: TransactionDetails = TransactionDetails {

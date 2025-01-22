@@ -402,8 +402,7 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         let force_close_spend_delay = self
             .storage
             .get_channel_closure(&key)?
-            .map(|c| c.force_close_spend_delay)
-            .flatten();
+            .and_then(|c| c.force_close_spend_delay);
         let mut closure = closure;
         closure.set_force_close_spend_delay(force_close_spend_delay);
 
@@ -882,6 +881,7 @@ mod test {
             reason: "This is a test.".to_string(),
             timestamp: utils::now().as_secs(),
             channel_funding_txo: None,
+            force_close_spend_delay: None,
         };
         let result = persister.persist_channel_closure(user_channel_id, closure.clone());
         assert!(result.is_ok());
