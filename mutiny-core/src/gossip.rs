@@ -481,29 +481,50 @@ pub(crate) fn save_ln_peer_info(
     Ok(())
 }
 
-pub(crate) fn get_rgs_url(
+pub(crate) async fn check_url_validity(url: &str, logger: Arc<MutinyLogger>) -> bool {
+    let client = reqwest::Client::new();
+    match client.get(url).send().await {
+        Ok(res) => {
+            log_debug!(logger, "URL check response: {:?}", res);
+            res.status().is_success()
+        }
+        Err(e) => {
+            log_warn!(logger, "URL check error: {:?}", e);
+            false
+        }
+    }
+}
+
+pub(crate) async fn get_rgs_url(
     network: Network,
     user_provided_url: Option<&str>,
     last_sync_time: Option<u32>,
+    logger: Arc<MutinyLogger>,
 ) -> Option<String> {
     let last_sync_time = last_sync_time.unwrap_or(0);
     if let Some(url) = user_provided_url.filter(|url| !url.is_empty()) {
         let url = url.strip_suffix('/').unwrap_or(url);
-        Some(format!("{url}/{last_sync_time}"))
-    } else {
-        match network {
-            Network::Bitcoin => Some(format!(
-                "https://rapidsync.lightningdevkit.org/snapshot/{last_sync_time}"
-            )),
-            Network::Testnet => Some(format!(
-                "https://rapidsync.lightningdevkit.org/testnet/snapshot/{last_sync_time}"
-            )),
-            Network::Signet => Some(format!(
-                "https://rgs.mutinynet.com/snapshot/{last_sync_time}"
-            )),
-            Network::Regtest => None,
-            net => unreachable!("Unknown network {net}!"),
+        let rgs_url = format!("{url}/{last_sync_time}");
+        if check_url_validity(&rgs_url, logger.clone()).await {
+            return Some(rgs_url);
+        } else {
+            log_warn!(logger, "User provided RGS URL is not valid: {}", url);
         }
+    }
+
+    // If user URL is not valid or not provided, use default based on network
+    match network {
+        Network::Bitcoin => Some(format!(
+            "https://rapidsync.lightningdevkit.org/snapshot/{last_sync_time}"
+        )),
+        Network::Testnet => Some(format!(
+            "https://rapidsync.lightningdevkit.org/testnet/snapshot/{last_sync_time}"
+        )),
+        Network::Signet => Some(format!(
+            "https://rgs.mutinynet.com/snapshot/{last_sync_time}"
+        )),
+        Network::Regtest => None,
+        net => unreachable!("Unknown network {net}!"),
     }
 }
 

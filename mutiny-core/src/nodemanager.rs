@@ -1116,7 +1116,10 @@ impl<S: MutinyStorage> NodeManager<S> {
                 self.network,
                 self.user_rgs_url.as_deref(),
                 last_rgs_sync_timestamp,
-            ) {
+                self.logger.clone(),
+            )
+            .await
+            {
                 log_info!(self.logger, "RGS URL: {rgs_url}");
 
                 let now = utils::now().as_secs();
