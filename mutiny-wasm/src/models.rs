@@ -327,11 +327,6 @@ impl MutinyChannel {
             None => false,
         }
     }
-
-    #[wasm_bindgen(getter)]
-    pub fn force_close_spend_delay(&self) -> Option<u16> {
-        self.force_close_spend_delay
-    }
 }
 
 impl From<nodemanager::MutinyChannel> for MutinyChannel {
