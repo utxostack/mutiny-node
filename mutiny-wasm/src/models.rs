@@ -295,6 +295,7 @@ pub struct MutinyChannel {
     pub is_outbound: bool,
     pub is_usable: bool,
     pub is_anchor: bool,
+    pub force_close_spend_delay: Option<u16>,
 }
 
 #[wasm_bindgen]
@@ -326,6 +327,11 @@ impl MutinyChannel {
             None => false,
         }
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn force_close_spend_delay(&self) -> Option<u16> {
+        self.force_close_spend_delay
+    }
 }
 
 impl From<nodemanager::MutinyChannel> for MutinyChannel {
@@ -343,6 +349,7 @@ impl From<nodemanager::MutinyChannel> for MutinyChannel {
             is_outbound: m.is_outbound,
             is_usable: m.is_usable,
             is_anchor: m.is_anchor,
+            force_close_spend_delay: m.force_close_spend_delay,
         }
     }
 }
@@ -364,6 +371,7 @@ impl From<MutinyChannel> for nodemanager::MutinyChannel {
             is_outbound: m.is_outbound,
             is_usable: m.is_usable,
             is_anchor: m.is_anchor,
+            force_close_spend_delay: m.force_close_spend_delay,
         }
     }
 }

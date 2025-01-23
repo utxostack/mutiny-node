@@ -142,6 +142,7 @@ pub struct MutinyChannel {
     pub is_outbound: bool,
     pub is_usable: bool,
     pub is_anchor: bool,
+    pub force_close_spend_delay: Option<u16>,
 }
 
 impl From<&ChannelDetails> for MutinyChannel {
@@ -173,6 +174,7 @@ impl From<&ChannelDetails> for MutinyChannel {
             is_outbound: c.is_outbound,
             is_usable: c.is_usable,
             is_anchor,
+            force_close_spend_delay: c.force_close_spend_delay,
         }
     }
 }
@@ -224,7 +226,7 @@ impl ChannelClosure {
             channel_funding_txo: Some(channel_funding_txo),
             node_id: Some(node_id),
             reason: "".to_string(),
-            timestamp: 0,
+            timestamp: 0, // Ensure that the real timestamp is used to update vss when the channel is shut down
             force_close_spend_delay,
         }
     }
