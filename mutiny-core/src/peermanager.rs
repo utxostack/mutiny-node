@@ -22,6 +22,7 @@ use lightning::onion_message::messenger::{Destination, MessageRouter, OnionMessa
 use lightning::routing::gossip::NodeId;
 use lightning::util::logger::Logger;
 use lightning::{ln::msgs::SocketAddress, log_warn};
+use lightning::{log_debug, log_error};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -388,14 +389,14 @@ pub(crate) async fn connect_peer_if_necessary<
     while retries < max_retries {
         match pending_connections.try_lock() {
             Some(mut pending) => {
-                log::debug!("get pending connections");
+                log_debug!(logger, "get pending connections");
                 let now_secs = utils::now().as_secs() as u32;
                 let pending_expire_secs = now_secs - IGNORE_CONN_SECS;
                 if pending
                     .get(&node_id)
                     .is_some_and(|&last| pending_expire_secs < last)
                 {
-                    log::debug!("Ignoring connection request to {node_id}");
+                    log_debug!(logger, "Ignoring connection request to {node_id}");
                     return Ok(());
                 }
 
@@ -409,12 +410,12 @@ pub(crate) async fn connect_peer_if_necessary<
                 break;
             }
             None if retries > max_retries => {
-                log::error!("Can't get pending connections lock");
+                log_error!(logger, "Can't get pending connections lock");
                 return Err(MutinyError::ConnectionFailed);
             }
             None => {
                 retries += 1;
-                log::debug!("Can't get pending connections lock {retries}");
+                log_debug!(logger, "Can't get pending connections lock {retries}");
                 sleep(200).await;
                 continue;
             }
