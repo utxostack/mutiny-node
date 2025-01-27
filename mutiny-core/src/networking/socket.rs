@@ -19,6 +19,14 @@ pub enum MutinySocketDescriptor {
     Tcp(WsTcpSocketDescriptor),
 }
 
+impl MutinySocketDescriptor {
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Self::Tcp(d) => d.is_closed(),
+        }
+    }
+}
+
 impl ReadDescriptor for MutinySocketDescriptor {
     async fn read(&self) -> Option<Result<Vec<u8>, MutinyError>> {
         match self {
@@ -64,7 +72,13 @@ pub fn schedule_descriptor_read<P: PeerManager>(
                                     Ok(_read_bool) => {
                                         peer_manager.process_events();
                                     }
-                                    Err(e) => log_error!(logger, "got an error reading event: {}", e),
+                                    Err(e) => {
+                                        log_error!(logger, "got an error reading event: {}", e);
+                                    }
+                                }
+                                if descriptor.is_closed() {
+                                    log_error!(logger, "socket descriptor is closed");
+                                    break;
                                 }
                             }
                             Err(e) => {
