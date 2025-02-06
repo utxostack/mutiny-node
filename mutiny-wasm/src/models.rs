@@ -295,6 +295,7 @@ pub struct MutinyChannel {
     pub is_outbound: bool,
     pub is_usable: bool,
     pub is_anchor: bool,
+    pub force_close_spend_delay: Option<u16>,
 }
 
 #[wasm_bindgen]
@@ -343,6 +344,7 @@ impl From<nodemanager::MutinyChannel> for MutinyChannel {
             is_outbound: m.is_outbound,
             is_usable: m.is_usable,
             is_anchor: m.is_anchor,
+            force_close_spend_delay: m.force_close_spend_delay,
         }
     }
 }
@@ -364,6 +366,7 @@ impl From<MutinyChannel> for nodemanager::MutinyChannel {
             is_outbound: m.is_outbound,
             is_usable: m.is_usable,
             is_anchor: m.is_anchor,
+            force_close_spend_delay: m.force_close_spend_delay,
         }
     }
 }
@@ -377,6 +380,7 @@ pub struct ChannelClosure {
     reason: String,
     pub timestamp: u64,
     channel_funding_txo: Option<String>,
+    force_close_spend_delay: Option<u16>,
 }
 
 #[wasm_bindgen]
@@ -404,6 +408,11 @@ impl ChannelClosure {
     #[wasm_bindgen(getter)]
     pub fn channel_funding_txo(&self) -> Option<String> {
         self.channel_funding_txo.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn force_close_spend_delay(&self) -> Option<u16> {
+        self.force_close_spend_delay
     }
 }
 
@@ -440,6 +449,7 @@ impl From<nodemanager::ChannelClosure> for ChannelClosure {
             reason: c.reason,
             timestamp: c.timestamp,
             channel_funding_txo: c.channel_funding_txo.map(|txo| format!("{}", txo)),
+            force_close_spend_delay: c.force_close_spend_delay,
         }
     }
 }

@@ -691,6 +691,7 @@ impl<S: MutinyStorage> EventHandler<S> {
                 channel_id,
                 user_channel_id,
                 counterparty_node_id,
+                funding_txo,
                 ..
             } => {
                 log_debug!(
@@ -704,6 +705,31 @@ impl<S: MutinyStorage> EventHandler<S> {
                     log_warn!(
                         self.logger,
                         "ERROR: Could not delete channel open params, but continuing: {e}"
+                    );
+                }
+
+                let all_channels = self.channel_manager.list_channels();
+                let found_channel = all_channels.iter().find(|chan| {
+                    chan.funding_txo.map(|a| a.into_bitcoin_outpoint()) == Some(funding_txo)
+                });
+                if let Some(channel) = found_channel {
+                    let closure = ChannelClosure::new_placeholder(
+                        user_channel_id,
+                        channel_id,
+                        funding_txo,
+                        counterparty_node_id,
+                        channel.force_close_spend_delay,
+                    );
+                    if let Err(e) = self
+                        .persister
+                        .persist_channel_closure(user_channel_id, closure)
+                    {
+                        log_error!(self.logger, "Failed to persist channel closure: {e}");
+                    }
+                } else {
+                    log_warn!(
+                        self.logger,
+                        "WARNING: Could not find channel with funding txo {funding_txo:?} when calling list_channels in ChannelPending event"
                     );
                 }
             }

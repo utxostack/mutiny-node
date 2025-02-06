@@ -398,6 +398,14 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
             "{CHANNEL_CLOSURE_PREFIX}{}",
             user_channel_id.to_be_bytes().to_lower_hex_string()
         ));
+
+        let force_close_spend_delay = self
+            .storage
+            .get_channel_closure(&key)?
+            .and_then(|c| c.force_close_spend_delay);
+        let mut closure = closure;
+        closure.set_force_close_spend_delay(force_close_spend_delay);
+
         self.storage
             .write_data(key.clone(), &closure, Some(closure.timestamp as u32))?;
 
@@ -873,6 +881,7 @@ mod test {
             reason: "This is a test.".to_string(),
             timestamp: utils::now().as_secs(),
             channel_funding_txo: None,
+            force_close_spend_delay: None,
         };
         let result = persister.persist_channel_closure(user_channel_id, closure.clone());
         assert!(result.is_ok());
