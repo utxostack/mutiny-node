@@ -523,7 +523,7 @@ async fn connect_peer<P: PeerManager>(
             .await?;
             let (_, net_addr) = try_parse_addr_string(t);
             (
-                AnySocketDescriptor::Tcp(WsTcpSocketDescriptor::new(Arc::new(proxy))),
+                AnySocketDescriptor::Tcp(WsTcpSocketDescriptor::new(proxy)),
                 net_addr,
             )
         }
