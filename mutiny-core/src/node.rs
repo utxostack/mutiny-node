@@ -1334,48 +1334,47 @@ impl<S: MutinyStorage> Node<S> {
 
     pub async fn create_invoice(
         &self,
-        amount_sat: u64,
+        amount_sat: Option<u64>,
         route_hints: Option<Vec<PhantomRouteHints>>,
         labels: Vec<String>,
         expiry_delta_secs: Option<u32>,
     ) -> Result<(Bolt11Invoice, u64), MutinyError> {
         log_trace!(self.logger, "calling create_invoice");
 
-        if amount_sat < 1 {
-            return Err(MutinyError::BadAmountError);
-        }
-
         let res = match self.lsp_client.as_ref() {
             Some(lsp) => {
                 let connect = lsp.get_lsp_connection_string().await;
                 self.connect_peer(PubkeyConnectionInfo::new(&connect)?, None)
                     .await?;
+                if let Some(amount) = amount_sat {
+                    if amount < 1 {
+                        return Err(MutinyError::BadAmountError);
+                    }
+                    let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
+                    log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount * 1000);
 
-                let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
-                log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
-
-                if inbound_capacity_msat < amount_sat * 1_000 {
-                    log_debug!(
-                        self.logger,
-                        "Inbound capacity insufficient, try to resume disconnect channels..."
-                    );
-                    if let Err(err) = self.try_connect_unusable_channel_peers().await {
+                    if inbound_capacity_msat < amount * 1_000 {
                         log_debug!(
                             self.logger,
-                            "try connect unusable_channel_peers error {err:?}"
+                            "Inbound capacity insufficient, try to resume disconnect channels..."
                         );
-                    }
+                        if let Err(err) = self.try_connect_unusable_channel_peers().await {
+                            log_debug!(
+                                self.logger,
+                                "try connect unusable_channel_peers error {err:?}"
+                            );
+                        }
 
-                    let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
-                    log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount_sat * 1000);
-                    if inbound_capacity_msat < amount_sat * 1_000 {
-                        return Err(MutinyError::InsufficientBalance);
+                        let inbound_capacity_msat: u64 = self.get_inbound_capacity_msat();
+                        log_debug!(self.logger, "Current inbound liquidity {inbound_capacity_msat}msats, creating invoice for {}msats", amount * 1000);
+                        if inbound_capacity_msat < amount * 1_000 {
+                            return Err(MutinyError::InsufficientBalance);
+                        }
                     }
                 }
-
                 Ok((
                     self.create_internal_invoice(
-                        Some(amount_sat),
+                        amount_sat,
                         None,
                         route_hints,
                         labels,
@@ -1387,7 +1386,7 @@ impl<S: MutinyStorage> Node<S> {
             }
             None => Ok((
                 self.create_internal_invoice(
-                    Some(amount_sat),
+                    amount_sat,
                     None,
                     route_hints,
                     labels,
@@ -2826,14 +2825,17 @@ mod tests {
 
         let now = crate::utils::now().as_secs();
 
-        let amount_sats = 1_000;
+        let amount_sats = Some(1_000);
 
         let (invoice, _) = node
             .create_invoice(amount_sats, None, vec![], None)
             .await
             .unwrap();
 
-        assert_eq!(invoice.amount_milli_satoshis(), Some(amount_sats * 1000));
+        assert_eq!(
+            invoice.amount_milli_satoshis(),
+            amount_sats.map(|amount| amount * 1000)
+        );
         match invoice.description() {
             Bolt11InvoiceDescription::Direct(desc) => {
                 assert_eq!(desc.to_string(), "");
@@ -2850,7 +2852,7 @@ mod tests {
         assert_eq!(from_storage.payment_hash, invoice.payment_hash().to_owned());
         assert_eq!(from_storage.preimage, None);
         assert_eq!(from_storage.payee_pubkey, None);
-        assert_eq!(from_storage.amount_sats, Some(amount_sats));
+        assert_eq!(from_storage.amount_sats, amount_sats);
         assert_eq!(from_storage.status, HTLCStatus::Pending);
         assert_eq!(from_storage.fees_paid, None);
         assert!(from_storage.inbound);
@@ -2863,7 +2865,7 @@ mod tests {
         let node = create_node(storage).await;
 
         let invoice = node
-            .create_invoice(10_000, None, vec![], None)
+            .create_invoice(Some(10_000), None, vec![], None)
             .await
             .unwrap()
             .0;
@@ -2994,7 +2996,7 @@ mod wasm_test {
 
         let now = crate::utils::now().as_secs();
 
-        let amount_sats = 1_000;
+        let amount_sats = Some(1_000);
         let label = "test".to_string();
         let labels = vec![label.clone()];
 
@@ -3003,7 +3005,10 @@ mod wasm_test {
             .await
             .unwrap();
 
-        assert_eq!(invoice.amount_milli_satoshis(), Some(amount_sats * 1000));
+        assert_eq!(
+            invoice.amount_milli_satoshis(),
+            amount_sats.map(|amount| amount * 1000)
+        );
         match invoice.description() {
             Bolt11InvoiceDescription::Direct(desc) => {
                 assert_eq!(desc.to_string(), "test");
@@ -3020,7 +3025,7 @@ mod wasm_test {
         assert_eq!(from_storage.payment_hash, invoice.payment_hash().to_owned());
         assert_eq!(from_storage.preimage, None);
         assert_eq!(from_storage.payee_pubkey, None);
-        assert_eq!(from_storage.amount_sats, Some(amount_sats));
+        assert_eq!(from_storage.amount_sats, amount_sats);
         assert_eq!(from_storage.status, HTLCStatus::Pending);
         assert_eq!(from_storage.fees_paid, None);
         assert_eq!(from_storage.labels, labels.clone());
@@ -3046,7 +3051,7 @@ mod wasm_test {
         let node = create_node(storage).await;
 
         let invoice = node
-            .create_invoice(10_000, None, vec![], None)
+            .create_invoice(Some(10_000), None, vec![], None)
             .await
             .unwrap()
             .0;

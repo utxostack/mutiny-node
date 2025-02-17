@@ -124,7 +124,7 @@ pub trait InvoiceHandler {
     ) -> Result<MutinyInvoice, MutinyError>;
     async fn create_invoice(
         &self,
-        amount: u64,
+        amount: Option<u64>,
         labels: Vec<String>,
         expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError>;
@@ -1272,7 +1272,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
             None
         } else {
             Some(
-                self.create_lightning_invoice(amount.expect("just checked"), labels.clone(), None)
+                self.create_lightning_invoice(amount, labels.clone(), None)
                     .await?
                     .bolt11
                     .ok_or(MutinyError::InvoiceCreationFailed)?,
@@ -1428,7 +1428,7 @@ impl<S: MutinyStorage> MutinyWallet<S> {
 
     async fn create_lightning_invoice(
         &self,
-        amount: u64,
+        amount: Option<u64>,
         labels: Vec<String>,
         expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError> {
@@ -2038,7 +2038,7 @@ impl<S: MutinyStorage> InvoiceHandler for MutinyWallet<S> {
 
     async fn create_invoice(
         &self,
-        amount: u64,
+        amount: Option<u64>,
         labels: Vec<String>,
         expiry_delta_secs: Option<u32>,
     ) -> Result<MutinyInvoice, MutinyError> {

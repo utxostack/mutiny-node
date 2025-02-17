@@ -1475,7 +1475,7 @@ impl<S: MutinyStorage> NodeManager<S> {
     /// If there is only one node it will create an invoice just for that node.
     pub async fn create_invoice(
         &self,
-        amount: u64,
+        amount: Option<u64>,
         labels: Vec<String>,
         expiry_delta_secs: Option<u32>,
     ) -> Result<(MutinyInvoice, u64), MutinyError> {
