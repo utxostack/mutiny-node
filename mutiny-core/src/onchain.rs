@@ -148,7 +148,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
 
         if let Some(cb) = self.ln_event_callback.as_ref() {
             let event = CommonLnEvent::TxBroadcasted {
-                txid: format!("{:x}", tx.compute_txid()),
+                txid: format!("{:x}", txid),
                 hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
             };
             cb.trigger(event);
