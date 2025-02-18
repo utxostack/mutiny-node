@@ -25,6 +25,7 @@ pub enum ActivityType {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[wasm_bindgen]
 pub struct ActivityItem {
+    bolt11: Option<Bolt11Invoice>,
     pub kind: ActivityType,
     id: String,
     pub amount_sats: Option<u64>,
@@ -50,6 +51,11 @@ impl ActivityItem {
     #[wasm_bindgen(getter)]
     pub fn labels(&self) -> Vec<String> {
         self.labels.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn bolt11(&self) -> Option<String> {
+        self.bolt11.clone().map(|b| b.to_string())
     }
 }
 
@@ -110,6 +116,17 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             ActivityType::ChannelClose => PrivacyLevel::NotAvailable,
         };
 
+        let bolt11 = match kind {
+            ActivityType::Lightning => {
+                if let mutiny_core::ActivityItem::Lightning(ref ln) = a {
+                    ln.bolt11.clone()
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
         ActivityItem {
             kind,
             id,
@@ -117,6 +134,7 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             inbound,
             fee_paid_msat,
             labels: a.labels(),
+            bolt11,
             last_updated: a.last_updated(),
             privacy_level: privacy_level.to_string(),
         }
