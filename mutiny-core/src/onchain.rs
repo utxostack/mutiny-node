@@ -29,6 +29,7 @@ use crate::error::MutinyError;
 use crate::fees::MutinyFeeEstimator;
 use crate::labels::*;
 use crate::logging::MutinyLogger;
+use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::storage::{
     IndexItem, MutinyStorage, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
 };
@@ -48,9 +49,11 @@ pub struct OnChainWallet<S: MutinyStorage> {
     pub fees: Arc<MutinyFeeEstimator<S>>,
     pub(crate) stop: Arc<AtomicBool>,
     logger: Arc<MutinyLogger>,
+    ln_event_callback: Option<CommonLnEventCallback>,
 }
 
 impl<S: MutinyStorage> OnChainWallet<S> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         xprivkey: Xpriv,
         db: S,
@@ -59,6 +62,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         fees: Arc<MutinyFeeEstimator<S>>,
         stop: Arc<AtomicBool>,
         logger: Arc<MutinyLogger>,
+        ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Result<OnChainWallet<S>, MutinyError> {
         let account_number = 0;
         let (receive_descriptor_template, change_descriptor_template) =
@@ -115,6 +119,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             fees,
             stop,
             logger,
+            ln_event_callback,
         })
     }
 
@@ -130,7 +135,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             )));
         } else if let Err(e) = self
             .insert_tx(
-                tx,
+                tx.clone(),
                 ConfirmationTime::Unconfirmed {
                     last_seen: now().as_secs(),
                 },
@@ -139,6 +144,15 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             .await
         {
             log_warn!(self.logger, "ERROR: Could not sync broadcasted tx ({txid}), will be synced in next iteration: {e:?}");
+        }
+
+        if let Some(cb) = self.ln_event_callback.as_ref() {
+            let event = CommonLnEvent::TxBroadcasted {
+                txid: format!("{:x}", tx.compute_txid()),
+                hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
+            };
+            cb.trigger(event);
+            log_debug!(self.logger, "Triggered TxBroadcasted event");
         }
 
         Ok(())

@@ -369,6 +369,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             fee_estimator.clone(),
             stop.clone(),
             logger.clone(),
+            self.ln_event_callback.clone(),
         )?);
         log_trace!(logger, "finished creating on chain wallet");
 

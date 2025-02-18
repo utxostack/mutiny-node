@@ -67,6 +67,11 @@ pub enum CommonLnEvent {
     },
     // Wallet first synced
     WalletFirstSynced,
+    // Transaction broadcasted
+    TxBroadcasted {
+        txid: String,
+        hex_tx: String,
+    },
 }
 
 #[derive(Clone)]
