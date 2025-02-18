@@ -3046,6 +3046,48 @@ mod wasm_test {
     }
 
     #[test]
+    async fn test_create_invoice_without_amount() {
+        let storage = MemoryStorage::default();
+        let node = create_node(storage.clone()).await;
+        let logger = Arc::new(MutinyLogger::default());
+
+        let now = crate::utils::now().as_secs();
+
+        let amount_sats = None;
+        let label = "test".to_string();
+        let labels = vec![label.clone()];
+
+        let (invoice, _) = node
+            .create_invoice(amount_sats, None, labels.clone(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(invoice.amount_milli_satoshis(), amount_sats);
+        match invoice.description() {
+            Bolt11InvoiceDescription::Direct(desc) => {
+                assert_eq!(desc.to_string(), "test");
+            }
+            _ => panic!("unexpected invoice description"),
+        }
+
+        let from_storage = get_invoice_by_hash(invoice.payment_hash(), &storage, &logger).unwrap();
+        let by_hash = get_invoice_by_hash(invoice.payment_hash(), &storage, &logger).unwrap();
+
+        assert_eq!(from_storage, by_hash);
+        assert_eq!(from_storage.bolt11, Some(invoice.clone()));
+        assert_eq!(from_storage.description, Some("test".to_string()));
+        assert_eq!(from_storage.payment_hash, invoice.payment_hash().to_owned());
+        assert_eq!(from_storage.preimage, None);
+        assert_eq!(from_storage.payee_pubkey, None);
+        assert_eq!(from_storage.amount_sats, amount_sats);
+        assert_eq!(from_storage.status, HTLCStatus::Pending);
+        assert_eq!(from_storage.fees_paid, None);
+        assert_eq!(from_storage.labels, labels.clone());
+        assert!(from_storage.inbound);
+        assert!(from_storage.last_updated >= now);
+    }
+
+    #[test]
     async fn test_fail_own_invoice() {
         let storage = MemoryStorage::default();
         let node = create_node(storage).await;
