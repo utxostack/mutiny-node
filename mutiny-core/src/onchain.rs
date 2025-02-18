@@ -926,7 +926,17 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let xpriv = Xpriv::new_master(Network::Testnet, &mnemonic.to_seed("")).unwrap();
 
-        OnChainWallet::new(xpriv, db, Network::Testnet, esplora, fees, stop, logger).unwrap()
+        OnChainWallet::new(
+            xpriv,
+            db,
+            Network::Testnet,
+            esplora,
+            fees,
+            stop,
+            logger,
+            None,
+        )
+        .unwrap()
     }
 
     #[test]

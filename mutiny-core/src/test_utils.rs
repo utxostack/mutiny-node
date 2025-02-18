@@ -92,6 +92,7 @@ pub(crate) async fn create_node<S: MutinyStorage>(storage: S) -> Node<S> {
             fee_estimator.clone(),
             stop.clone(),
             logger.clone(),
+            None,
         )
         .unwrap(),
     );

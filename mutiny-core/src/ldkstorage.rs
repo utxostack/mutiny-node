@@ -1009,6 +1009,7 @@ mod test {
                 fees.clone(),
                 stop,
                 logger.clone(),
+                None,
             )
             .unwrap(),
         );
