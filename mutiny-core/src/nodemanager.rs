@@ -683,6 +683,7 @@ impl<S: MutinyStorage> NodeManager<S> {
                     if let Some(cb) = nm.ln_event_callback.as_ref() {
                         let event = CommonLnEvent::WalletFirstSynced {};
                         cb.trigger(event);
+                        log_debug!(nm.logger, "Triggered WalletFirstSynced event");
                     }
                 }
 
