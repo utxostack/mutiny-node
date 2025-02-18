@@ -719,7 +719,7 @@ impl<S: MutinyStorage> Persist<InMemorySigner> for MutinyNodePersister<S> {
 
         log_debug!(
             self.logger,
-            "update_persisted_channel: (channel_id, latest_update_id, version,is_fully_resolved, claimable_balances, current_best_block): {:?}",
+            "update_persisted_channel: (channel_id, latest_update_id, version, is_fully_resolved, claimable_balances, current_best_block): {:?}",
             (
                 monitor.channel_id(),
                 monitor.get_latest_update_id(),
