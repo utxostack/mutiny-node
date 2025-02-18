@@ -65,6 +65,8 @@ pub enum CommonLnEvent {
         payment_hash: String,
         amount_msat: u64,
     },
+    // Wallet first synced
+    WalletFirstSynced,
 }
 
 #[derive(Clone)]
