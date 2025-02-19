@@ -32,6 +32,7 @@ pub struct PaymentInfo {
     pub secret: Option<[u8; 32]>,
     pub status: HTLCStatus,
     #[serde(skip_serializing_if = "MillisatAmount::is_none")]
+    #[serde(default)]
     pub amt_msat: MillisatAmount,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_paid_msat: Option<u64>,
@@ -44,7 +45,7 @@ pub struct PaymentInfo {
     pub last_update: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MillisatAmount(pub Option<u64>);
 
 impl MillisatAmount {
@@ -914,6 +915,7 @@ mod test {
     use crate::event::{HTLCStatus, MillisatAmount, PaymentInfo};
     use crate::{utils, PrivacyLevel};
     use bitcoin::secp256k1::PublicKey;
+    use lightning_invoice::Bolt11Invoice;
     use std::str::FromStr;
 
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -934,6 +936,34 @@ mod test {
             amt_msat: MillisatAmount(Some(420)),
             fee_paid_msat: None,
             bolt11: None,
+            payee_pubkey: Some(pubkey),
+            secret: None,
+            last_update: utils::now().as_secs(),
+        };
+
+        let serialized = serde_json::to_string(&payment_info).unwrap();
+        let deserialized: PaymentInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(payment_info, deserialized);
+
+        let serialized = serde_json::to_value(&payment_info).unwrap();
+        let deserialized: PaymentInfo = serde_json::from_value(serialized).unwrap();
+        assert_eq!(payment_info, deserialized);
+    }
+
+    #[test]
+    fn test_payment_info_without_amount() {
+        let pubkey = PublicKey::from_str(
+            "02465ed5be53d04fde66c9418ff14a5f2267723810176c9212b722e542dc1afb1b",
+        )
+        .unwrap();
+
+        let payment_info = PaymentInfo {
+            preimage: None,
+            status: HTLCStatus::Succeeded,
+            privacy_level: PrivacyLevel::Anonymous,
+            amt_msat: MillisatAmount(None),
+            fee_paid_msat: None,
+            bolt11: Some(Bolt11Invoice::from_str("lntb1pnmghqhdqqnp4qty5slw3t6d6gt43tndkq6p6ut9ewrqrfq2nj67wnmk6dqzefweqcpp5fk6cxcwnjdrzw5zm9mzjuhfrwnee3feewmtycj5nk7klngava7gqsp5qajl23w8dluhxn90duny44ar0syrxqa4w3ap8635aat78lvdvfds9qyysgqcqzptxqyz5vqrzjqg7s0fwc76ky6umpgeuh7p7qm4l4jljw0uxa3uu5vrupjzjlpeny0apyqqqqqqqqsgqqqqlgqqqqlgqqjqr5p4cd64qa80ksthgdff908gxmjwvrwwmhnxnxlsrc0c2weuzcw3kthknu6cgalqdk0cnqsugvmcz9dvgr5l9rtphgm37ycg362s9sspwvxmj0").unwrap()),
             payee_pubkey: Some(pubkey),
             secret: None,
             last_update: utils::now().as_secs(),
