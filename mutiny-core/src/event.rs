@@ -32,6 +32,7 @@ pub struct PaymentInfo {
     pub secret: Option<[u8; 32]>,
     pub status: HTLCStatus,
     #[serde(skip_serializing_if = "MillisatAmount::is_none")]
+    #[serde(default)]
     pub amt_msat: MillisatAmount,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_paid_msat: Option<u64>,
@@ -44,7 +45,7 @@ pub struct PaymentInfo {
     pub last_update: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MillisatAmount(pub Option<u64>);
 
 impl MillisatAmount {
