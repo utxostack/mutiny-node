@@ -970,7 +970,6 @@ mod test {
         };
 
         let serialized = serde_json::to_string(&payment_info).unwrap();
-        println!("{:}", serialized);
         let deserialized: PaymentInfo = serde_json::from_str(&serialized).unwrap();
         assert_eq!(payment_info, deserialized);
 
