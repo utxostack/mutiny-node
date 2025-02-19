@@ -65,6 +65,13 @@ pub enum CommonLnEvent {
         payment_hash: String,
         amount_msat: u64,
     },
+    // Wallet first synced
+    WalletFirstSynced,
+    // Transaction broadcasted
+    TxBroadcasted {
+        txid: String,
+        hex_tx: String,
+    },
 }
 
 #[derive(Clone)]

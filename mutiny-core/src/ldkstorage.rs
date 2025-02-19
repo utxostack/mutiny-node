@@ -679,6 +679,19 @@ impl<S: MutinyStorage> Persist<InMemorySigner> for MutinyNodePersister<S> {
             update_id,
         };
 
+        log_debug!(
+            self.logger,
+            "persist_new_channel: (channel_id, latest_update_id, version, is_fully_resolved, claimable_balances, current_best_block): {:?}",
+            (
+                monitor.channel_id().to_string(),
+                monitor.get_latest_update_id(),
+                version,
+                monitor.is_fully_resolved(self.logger.as_ref()),
+                monitor.get_claimable_balances(),
+                monitor.current_best_block(),
+            )
+        );
+
         self.init_persist_monitor(key, monitor, version, update_id)
     }
 
@@ -703,6 +716,19 @@ impl<S: MutinyStorage> Persist<InMemorySigner> for MutinyNodePersister<S> {
             funding_txo,
             update_id,
         };
+
+        log_debug!(
+            self.logger,
+            "update_persisted_channel: (channel_id, latest_update_id, version, is_fully_resolved, claimable_balances, current_best_block): {:?}",
+            (
+                monitor.channel_id(),
+                monitor.get_latest_update_id(),
+                version,
+                monitor.is_fully_resolved(self.logger.as_ref()),
+                monitor.get_claimable_balances(),
+                monitor.current_best_block()
+            )
+        );
 
         self.init_persist_monitor(key, monitor, version, update_id)
     }
@@ -983,6 +1009,7 @@ mod test {
                 fees.clone(),
                 stop,
                 logger.clone(),
+                None,
             )
             .unwrap(),
         );

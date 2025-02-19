@@ -2,7 +2,7 @@ use crate::labels::LabelStorage;
 use crate::ldkstorage::CHANNEL_CLOSURE_PREFIX;
 use crate::logging::LOGGING_KEY;
 use crate::lsp::voltage;
-use crate::messagehandler::CommonLnEventCallback;
+use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::peermanager::PeerManager;
 use crate::utils::sleep;
 use crate::MutinyInvoice;
@@ -369,6 +369,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
             fee_estimator.clone(),
             stop.clone(),
             logger.clone(),
+            self.ln_event_callback.clone(),
         )?);
         log_trace!(logger, "finished creating on chain wallet");
 
@@ -679,6 +680,12 @@ impl<S: MutinyStorage> NodeManager<S> {
                     // if this is the first sync, set the done_first_sync flag
                     let _ = nm.storage.set_done_first_sync();
                     synced = true;
+
+                    if let Some(cb) = nm.ln_event_callback.as_ref() {
+                        let event = CommonLnEvent::WalletFirstSynced {};
+                        cb.trigger(event);
+                        log_debug!(nm.logger, "Triggered WalletFirstSynced event");
+                    }
                 }
 
                 // wait for next sync round, checking graceful shutdown check each second.

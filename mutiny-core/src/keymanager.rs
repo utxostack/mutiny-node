@@ -344,7 +344,17 @@ mod tests {
         let xpriv = Xpriv::new_master(network, &mnemonic.to_seed("")).unwrap();
 
         let wallet = Arc::new(
-            OnChainWallet::new(xpriv, db, network, esplora, fees, stop, logger.clone()).unwrap(),
+            OnChainWallet::new(
+                xpriv,
+                db,
+                network,
+                esplora,
+                fees,
+                stop,
+                logger.clone(),
+                None,
+            )
+            .unwrap(),
         );
 
         let km = create_keys_manager(wallet.clone(), xpriv, 1, logger.clone()).unwrap();
@@ -392,7 +402,17 @@ mod tests {
         let xpriv = Xpriv::new_master(network, &mnemonic.to_seed("")).unwrap();
 
         let wallet = Arc::new(
-            OnChainWallet::new(xpriv, db, network, esplora, fees, stop, logger.clone()).unwrap(),
+            OnChainWallet::new(
+                xpriv,
+                db,
+                network,
+                esplora,
+                fees,
+                stop,
+                logger.clone(),
+                None,
+            )
+            .unwrap(),
         );
 
         let km = create_keys_manager(wallet.clone(), xpriv, 1, logger.clone()).unwrap();
