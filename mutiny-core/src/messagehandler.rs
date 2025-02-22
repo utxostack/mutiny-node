@@ -67,10 +67,11 @@ pub enum CommonLnEvent {
     },
     // Wallet first synced
     WalletFirstSynced,
-    // Transaction broadcasted
-    TxBroadcasted {
+    // Try broadcast tx
+    TryBroadcastTx {
         txid: String,
         hex_tx: String,
+        timestamp: u64,
     },
 }
 

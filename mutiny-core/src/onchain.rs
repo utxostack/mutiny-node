@@ -33,6 +33,7 @@ use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::storage::{
     IndexItem, MutinyStorage, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
 };
+use crate::utils;
 use crate::utils::{now, sleep};
 use crate::TransactionDetails;
 
@@ -128,6 +129,16 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         log_info!(self.logger, "Broadcasting transaction: {txid}");
         log_debug!(self.logger, "Transaction: {}", serialize(&tx).as_hex());
 
+        if let Some(cb) = self.ln_event_callback.as_ref() {
+            let event = CommonLnEvent::TryBroadcastTx {
+                txid: format!("{:x}", txid),
+                hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
+                timestamp: utils::now().as_secs(),
+            };
+            cb.trigger(event);
+            log_debug!(self.logger, "Triggered TxBroadcasted event");
+        }
+
         if let Err(e) = self.blockchain.broadcast(&tx).await {
             log_error!(self.logger, "Failed to broadcast transaction ({txid}): {e}");
             return Err(MutinyError::Other(anyhow!(
@@ -144,15 +155,6 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             .await
         {
             log_warn!(self.logger, "ERROR: Could not sync broadcasted tx ({txid}), will be synced in next iteration: {e:?}");
-        }
-
-        if let Some(cb) = self.ln_event_callback.as_ref() {
-            let event = CommonLnEvent::TxBroadcasted {
-                txid: format!("{:x}", txid),
-                hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
-            };
-            cb.trigger(event);
-            log_debug!(self.logger, "Triggered TxBroadcasted event");
         }
 
         Ok(())
