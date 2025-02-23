@@ -47,6 +47,7 @@ const CHANNEL_OPENING_PARAMS_PREFIX: &str = "chan_open_params/";
 pub const CHANNEL_CLOSURE_PREFIX: &str = "channel_closure/";
 pub const CHANNEL_CLOSURE_BUMP_PREFIX: &str = "channel_closure_bump/";
 const FAILED_SPENDABLE_OUTPUT_DESCRIPTOR_KEY: &str = "failed_spendable_outputs";
+pub const BROADCAST_TX_1_IN_MULTI_OUT: &str = "broadcast_tx_1_in_multi_out/";
 
 pub(crate) type PhantomChannelManager<S: MutinyStorage> = LdkChannelManager<
     Arc<ChainMonitor<S>>,
