@@ -236,6 +236,10 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         let json: Value = encrypt_value(key_clone.clone(), local_data, self.cipher())?;
         self.write_raw(vec![(key_clone, json)])?;
 
+        if self.vss_client().is_none() || version.is_none() {
+            return Ok(());
+        }
+
         // save to VSS by spawn an async task
         log_debug!(self.logger(), "writing to VSS");
         if let Some(cb) = self.ln_event_callback().as_ref() {
