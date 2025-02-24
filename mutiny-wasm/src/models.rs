@@ -29,6 +29,7 @@ pub struct ActivityItem {
     pub kind: ActivityType,
     id: String,
     pub amount_sats: Option<u64>,
+    pub amount_msat: Option<u64>,
     pub inbound: bool,
     pub(crate) labels: Vec<String>,
     pub last_updated: Option<u64>,
@@ -98,6 +99,11 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             mutiny_core::ActivityItem::ChannelClosed(_) => (false, None),
         };
 
+        let amount_msat = match a {
+            mutiny_core::ActivityItem::Lightning(ref ln) => ln.amount_msat,
+            _ => None,
+        };
+
         let fee_paid_msat = match a {
             mutiny_core::ActivityItem::Lightning(ref ln) => ln.fee_paid_msat,
             _ => None,
@@ -131,6 +137,7 @@ impl From<mutiny_core::ActivityItem> for ActivityItem {
             kind,
             id,
             amount_sats,
+            amount_msat,
             inbound,
             fee_paid_msat,
             labels: a.labels(),
@@ -150,6 +157,7 @@ pub struct MutinyInvoice {
     preimage: Option<String>,
     payee_pubkey: Option<String>,
     pub amount_sats: Option<u64>,
+    pub amount_msat: Option<u64>,
     pub expire: u64,
     pub expired: bool,
     status: String,
@@ -228,6 +236,7 @@ impl From<mutiny_core::MutinyInvoice> for MutinyInvoice {
             preimage: m.preimage,
             payee_pubkey: m.payee_pubkey.map(|p| p.serialize().to_lower_hex_string()),
             amount_sats: m.amount_sats,
+            amount_msat: m.amount_msat,
             expire: m.expire,
             expired: m.expire < now,
             status: m.status.to_string(),
