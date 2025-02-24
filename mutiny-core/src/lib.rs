@@ -340,6 +340,7 @@ pub struct MutinyInvoice {
     pub preimage: Option<String>,
     pub payee_pubkey: Option<PublicKey>,
     pub amount_sats: Option<u64>,
+    pub amount_msat: Option<u64>,
     pub expire: u64,
     pub status: HTLCStatus,
     #[serde(default)]
@@ -361,6 +362,7 @@ impl Default for MutinyInvoice {
             preimage: None,
             payee_pubkey: None,
             amount_sats: None,
+            amount_msat: None,
             expire: 0,
             status: HTLCStatus::Pending,
             privacy_level: PrivacyLevel::NotAvailable,
@@ -398,6 +400,7 @@ impl From<Bolt11Invoice> for MutinyInvoice {
 
         let payment_hash = value.payment_hash().to_owned();
         let payee_pubkey = value.payee_pub_key().map(|p| p.to_owned());
+        let amount_msat = value.amount_milli_satoshis();
         let amount_sats = value.amount_milli_satoshis().map(|m| m / 1000);
 
         MutinyInvoice {
@@ -407,6 +410,7 @@ impl From<Bolt11Invoice> for MutinyInvoice {
             preimage: None,
             payee_pubkey,
             amount_sats,
+            amount_msat,
             expire: expiry,
             status: HTLCStatus::Pending,
             privacy_level: PrivacyLevel::NotAvailable,
@@ -483,6 +487,7 @@ impl MutinyInvoice {
                 })
             }
             None => {
+                let amount_msat: Option<u64> = i.amt_msat.0;
                 let amount_sats: Option<u64> = i.amt_msat.0.map(|s| s / 1_000);
                 let fees_paid = i.fee_paid_msat.map(|f| f / 1_000);
                 let preimage = i.preimage.map(|p| p.to_lower_hex_string());
@@ -494,6 +499,7 @@ impl MutinyInvoice {
                     preimage,
                     payee_pubkey: i.payee_pubkey,
                     amount_sats,
+                    amount_msat,
                     expire: i.last_update,
                     status: i.status,
                     privacy_level: i.privacy_level,
