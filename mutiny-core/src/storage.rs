@@ -188,6 +188,9 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     /// Get the event callback
     fn ln_event_callback(&self) -> Option<CommonLnEventCallback>;
 
+    /// Get logger
+    fn logger(&self) -> Arc<MutinyLogger>;
+
     /// An index of the activity in the storage, this should be a list of (timestamp, key) tuples
     /// This is used to for getting a sorted list of keys quickly
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>>;
@@ -565,6 +568,7 @@ pub struct MemoryStorage {
     pub memory: Arc<RwLock<HashMap<String, Value>>>,
     pub vss_client: Option<Arc<MutinyVssClient>>,
     pub ln_event_callback: Option<CommonLnEventCallback>,
+    pub logger: Arc<MutinyLogger>,
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     pub activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
     tasks: Arc<DBTasks>,
@@ -576,6 +580,7 @@ impl MemoryStorage {
         cipher: Option<Cipher>,
         vss_client: Option<Arc<MutinyVssClient>>,
         ln_event_callback: Option<CommonLnEventCallback>,
+        logger: Arc<MutinyLogger>,
     ) -> Self {
         Self {
             database: "memdb".to_string(),
@@ -584,6 +589,7 @@ impl MemoryStorage {
             memory: Arc::new(RwLock::new(HashMap::new())),
             vss_client,
             ln_event_callback,
+            logger,
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
             tasks: Arc::new(DBTasks::default()),
@@ -611,7 +617,7 @@ impl MemoryStorage {
 
 impl Default for MemoryStorage {
     fn default() -> Self {
-        Self::new(None, None, None, None)
+        Self::new(None, None, None, None, Arc::new(MutinyLogger::default()))
     }
 }
 
@@ -635,6 +641,10 @@ impl MutinyStorage for MemoryStorage {
 
     fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
         self.ln_event_callback.clone()
+    }
+
+    fn logger(&self) -> Arc<MutinyLogger> {
+        self.logger.clone()
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
@@ -776,6 +786,10 @@ impl MutinyStorage for () {
 
     fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
         None
+    }
+
+    fn logger(&self) -> Arc<MutinyLogger> {
+        Arc::new(MutinyLogger::default())
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
@@ -1073,7 +1087,7 @@ mod tests {
     use crate::test_utils::*;
 
     use crate::{encrypt::encryption_key_from_pass, storage::MemoryStorage};
-    use crate::{keymanager, storage::MutinyStorage};
+    use crate::{keymanager, storage::MutinyStorage, MutinyLogger};
 
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
@@ -1102,7 +1116,13 @@ mod tests {
 
         let pass = uuid::Uuid::new_v4().to_string();
         let cipher = encryption_key_from_pass(&pass).unwrap();
-        let storage = MemoryStorage::new(Some(pass), Some(cipher), None, None);
+        let storage = MemoryStorage::new(
+            Some(pass),
+            Some(cipher),
+            None,
+            None,
+            std::sync::Arc::new(MutinyLogger::default()),
+        );
 
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 

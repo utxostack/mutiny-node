@@ -346,7 +346,7 @@ impl IndexedDbStorage {
 
         let start = instant::Instant::now();
         // use a memory storage to handle encryption and decryption
-        let map = MemoryStorage::new(password, cipher, None, None);
+        let map = MemoryStorage::new(password, cipher, None, None, logger.clone().into());
 
         let all_json = store.get_all(None, None, None, None).await.map_err(|e| {
             MutinyError::read_err(anyhow!("Failed to get all from store: {e}").into())
@@ -761,6 +761,10 @@ impl MutinyStorage for IndexedDbStorage {
 
     fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
         self.ln_event_callback.clone()
+    }
+
+    fn logger(&self) -> Arc<MutinyLogger> {
+        self.logger.clone()
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
