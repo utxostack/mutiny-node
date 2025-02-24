@@ -1,6 +1,6 @@
 use crate::ldkstorage::CHANNEL_MANAGER_KEY;
 use crate::logging::MutinyLogger;
-use crate::messagehandler::CommonLnEventCallback;
+use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::nodemanager::{ChannelClosure, NodeStorage};
 use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
@@ -237,9 +237,38 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         self.write_raw(vec![(key_clone, json)])?;
 
         // save to VSS by spawn an async task
+        log_debug!(self.logger(), "writing to VSS");
+        if let Some(cb) = self.ln_event_callback().as_ref() {
+            let event = CommonLnEvent::BeforeSyncToVss {
+                key: key.clone(),
+                version,
+                timestamp: now().as_secs(),
+            };
+            cb.trigger(event);
+        }
+        let start = std::time::Instant::now();
         self.spawn({
             let db = self.clone();
-            async move { db.write_vss(key, data, version).await }
+            let logger = self.logger().clone();
+            async move {
+                let ret = db.write_vss(key.clone(), data, version).await;
+                let duration = start.elapsed();
+                log_debug!(
+                    logger,
+                    "done writing to VSS, took {:?}",
+                    duration.as_millis()
+                );
+                if let Some(cb) = db.ln_event_callback().as_ref() {
+                    let event = CommonLnEvent::SyncToVssCompleted {
+                        key: key.clone(),
+                        version,
+                        timestamp: now().as_secs(),
+                        duration_ms: duration.as_millis(),
+                    };
+                    cb.trigger(event);
+                }
+                ret
+            }
         });
 
         Ok(())
