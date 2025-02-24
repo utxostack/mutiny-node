@@ -957,7 +957,7 @@ mod tests {
         );
         let pass = uuid::Uuid::new_v4().to_string();
         let cipher = encryption_key_from_pass(&pass).unwrap();
-        let db = MemoryStorage::new(Some(pass), Some(cipher), None);
+        let db = MemoryStorage::new(Some(pass), Some(cipher), None, None);
         let logger = Arc::new(MutinyLogger::default());
         let fees = Arc::new(MutinyFeeEstimator::new(
             db.clone(),

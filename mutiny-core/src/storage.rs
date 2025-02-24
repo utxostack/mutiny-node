@@ -1,5 +1,6 @@
 use crate::ldkstorage::CHANNEL_MANAGER_KEY;
 use crate::logging::MutinyLogger;
+use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::{ChannelClosure, NodeStorage};
 use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
@@ -183,6 +184,9 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
 
     /// Get the VSS client used for storage
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>>;
+
+    /// Get the event callback
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback>;
 
     /// An index of the activity in the storage, this should be a list of (timestamp, key) tuples
     /// This is used to for getting a sorted list of keys quickly
@@ -560,6 +564,7 @@ pub struct MemoryStorage {
     pub cipher: Option<Cipher>,
     pub memory: Arc<RwLock<HashMap<String, Value>>>,
     pub vss_client: Option<Arc<MutinyVssClient>>,
+    pub ln_event_callback: Option<CommonLnEventCallback>,
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     pub activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
     tasks: Arc<DBTasks>,
@@ -570,6 +575,7 @@ impl MemoryStorage {
         password: Option<String>,
         cipher: Option<Cipher>,
         vss_client: Option<Arc<MutinyVssClient>>,
+        ln_event_callback: Option<CommonLnEventCallback>,
     ) -> Self {
         Self {
             database: "memdb".to_string(),
@@ -577,6 +583,7 @@ impl MemoryStorage {
             password,
             memory: Arc::new(RwLock::new(HashMap::new())),
             vss_client,
+            ln_event_callback,
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
             tasks: Arc::new(DBTasks::default()),
@@ -604,7 +611,7 @@ impl MemoryStorage {
 
 impl Default for MemoryStorage {
     fn default() -> Self {
-        Self::new(None, None, None)
+        Self::new(None, None, None, None)
     }
 }
 
@@ -624,6 +631,10 @@ impl MutinyStorage for MemoryStorage {
 
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>> {
         self.vss_client.clone()
+    }
+
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
+        self.ln_event_callback.clone()
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
@@ -760,6 +771,10 @@ impl MutinyStorage for () {
     }
 
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>> {
+        None
+    }
+
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
         None
     }
 
@@ -1087,7 +1102,7 @@ mod tests {
 
         let pass = uuid::Uuid::new_v4().to_string();
         let cipher = encryption_key_from_pass(&pass).unwrap();
-        let storage = MemoryStorage::new(Some(pass), Some(cipher), None);
+        let storage = MemoryStorage::new(Some(pass), Some(cipher), None, None);
 
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 

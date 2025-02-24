@@ -7,7 +7,7 @@ use gloo_utils::format::JsValueSerdeExt;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info};
 use log::error;
-use messagehandler::BumpChannelClosureTransaction;
+use messagehandler::{BumpChannelClosureTransaction, CommonLnEventCallback};
 use mutiny_core::event::PaymentInfo;
 use mutiny_core::logging::MutinyLogger;
 use mutiny_core::logging::LOGGING_KEY;
@@ -50,6 +50,7 @@ pub struct IndexedDbStorage {
     memory: Arc<RwLock<HashMap<String, Value>>>,
     pub(crate) indexed_db: Arc<RwLock<RexieContainer>>,
     vss: Option<Arc<MutinyVssClient>>,
+    ln_event_callback: Option<CommonLnEventCallback>,
     logger: Arc<MutinyLogger>,
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
@@ -62,6 +63,7 @@ impl IndexedDbStorage {
         password: Option<String>,
         cipher: Option<Cipher>,
         vss: Option<Arc<MutinyVssClient>>,
+        ln_event_callback: Option<CommonLnEventCallback>,
         logger: Arc<MutinyLogger>,
     ) -> Result<IndexedDbStorage, MutinyError> {
         if !database.starts_with(WALLET_DATABASE_NAME) {
@@ -102,6 +104,7 @@ impl IndexedDbStorage {
             memory,
             indexed_db,
             vss,
+            ln_event_callback,
             logger,
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
@@ -343,7 +346,7 @@ impl IndexedDbStorage {
 
         let start = instant::Instant::now();
         // use a memory storage to handle encryption and decryption
-        let map = MemoryStorage::new(password, cipher, None);
+        let map = MemoryStorage::new(password, cipher, None, None);
 
         let all_json = store.get_all(None, None, None, None).await.map_err(|e| {
             MutinyError::read_err(anyhow!("Failed to get all from store: {e}").into())
@@ -756,6 +759,10 @@ impl MutinyStorage for IndexedDbStorage {
         self.vss.clone()
     }
 
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
+        self.ln_event_callback.clone()
+    }
+
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
         self.activity_index.clone()
     }
@@ -1046,6 +1053,7 @@ mod tests {
             Some("".to_string()),
             None,
             None,
+            None,
             logger,
         )
         .await
@@ -1069,6 +1077,7 @@ mod tests {
             WALLET_DATABASE_NAME.to_string(),
             Some(password),
             Some(cipher),
+            None,
             None,
             logger,
         )
@@ -1132,6 +1141,7 @@ mod tests {
             Some(password),
             Some(cipher),
             None,
+            None,
             logger,
         )
         .await
@@ -1165,6 +1175,7 @@ mod tests {
             Some(password),
             Some(cipher),
             None,
+            None,
             logger,
         )
         .await
@@ -1195,10 +1206,16 @@ mod tests {
         let seed = Mnemonic::from_str("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").expect("could not generate");
 
         let logger = Arc::new(MutinyLogger::default());
-        let storage =
-            IndexedDbStorage::new(WALLET_DATABASE_NAME.to_string(), None, None, None, logger)
-                .await
-                .unwrap();
+        let storage = IndexedDbStorage::new(
+            WALLET_DATABASE_NAME.to_string(),
+            None,
+            None,
+            None,
+            None,
+            logger,
+        )
+        .await
+        .unwrap();
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 
         let stored_mnemonic = storage.get_mnemonic().unwrap();
@@ -1224,6 +1241,7 @@ mod tests {
             WALLET_DATABASE_NAME.to_string(),
             Some(password),
             Some(cipher),
+            None,
             None,
             logger,
         )
@@ -1252,6 +1270,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             logger.clone(),
         )
         .await
@@ -1275,6 +1294,7 @@ mod tests {
             WALLET_DATABASE_NAME.to_string(),
             password,
             cipher,
+            None,
             None,
             logger,
         )
