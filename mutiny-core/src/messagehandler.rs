@@ -74,7 +74,7 @@ pub enum CommonLnEvent {
         timestamp: u64,
     },
     // Before sync to VSS
-    BeforeSyncToVss {
+    SyncToVssStarting {
         key: String,
         version: Option<u32>,
         timestamp: u64,

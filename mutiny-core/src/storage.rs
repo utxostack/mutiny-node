@@ -239,7 +239,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         // save to VSS by spawn an async task
         log_debug!(self.logger(), "writing to VSS");
         if let Some(cb) = self.ln_event_callback().as_ref() {
-            let event = CommonLnEvent::BeforeSyncToVss {
+            let event = CommonLnEvent::SyncToVssStarting {
                 key: key.clone(),
                 version,
                 timestamp: now().as_secs(),
