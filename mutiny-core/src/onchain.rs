@@ -24,15 +24,18 @@ use hex_conservative::DisplayHex;
 use lightning::events::bump_transaction::{Utxo, WalletSource};
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace, log_warn};
+use serde::{Deserialize, Serialize};
 
 use crate::error::MutinyError;
 use crate::fees::MutinyFeeEstimator;
 use crate::labels::*;
+use crate::ldkstorage::BROADCAST_TX_1_IN_MULTI_OUT;
 use crate::logging::MutinyLogger;
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::storage::{
     IndexItem, MutinyStorage, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
 };
+use crate::utils;
 use crate::utils::{now, sleep};
 use crate::TransactionDetails;
 
@@ -50,6 +53,23 @@ pub struct OnChainWallet<S: MutinyStorage> {
     pub(crate) stop: Arc<AtomicBool>,
     logger: Arc<MutinyLogger>,
     ln_event_callback: Option<CommonLnEventCallback>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BroadcastTx1InMultiOut {
+    pub txid: String,
+    pub hex_tx: String,
+    pub timestamp: u64,
+}
+
+impl From<BroadcastTx1InMultiOut> for CommonLnEvent {
+    fn from(event: BroadcastTx1InMultiOut) -> Self {
+        CommonLnEvent::TryBroadcastTx1InMultiOut {
+            txid: event.txid,
+            hex_tx: event.hex_tx,
+            timestamp: event.timestamp,
+        }
+    }
 }
 
 impl<S: MutinyStorage> OnChainWallet<S> {
@@ -123,10 +143,34 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         })
     }
 
+    pub(crate) fn persist_broadcast_tx_1_in_multi_out(
+        &self,
+        input: OutPoint,
+        tx: BroadcastTx1InMultiOut,
+    ) -> Result<(), MutinyError> {
+        let key = format!("{BROADCAST_TX_1_IN_MULTI_OUT}{}", input);
+        self.storage
+            .write_data(key, tx.clone(), Some(tx.timestamp as u32))?;
+        Ok(())
+    }
+
     pub async fn broadcast_transaction(&self, tx: Transaction) -> Result<(), MutinyError> {
         let txid = tx.compute_txid();
         log_info!(self.logger, "Broadcasting transaction: {txid}");
         log_debug!(self.logger, "Transaction: {}", serialize(&tx).as_hex());
+
+        if is_tx_1_in_multi_out(&tx) {
+            let broadcast_tx = BroadcastTx1InMultiOut {
+                txid: format!("{:x}", txid),
+                hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
+                timestamp: utils::now().as_secs(),
+            };
+            if let Some(cb) = self.ln_event_callback.as_ref() {
+                cb.trigger(broadcast_tx.clone().into());
+                log_debug!(self.logger, "Triggered TryBroadcastTx1InMultiOut event");
+            }
+            self.persist_broadcast_tx_1_in_multi_out(tx.input[0].previous_output, broadcast_tx)?;
+        }
 
         if let Err(e) = self.blockchain.broadcast(&tx).await {
             log_error!(self.logger, "Failed to broadcast transaction ({txid}): {e}");
@@ -144,15 +188,6 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             .await
         {
             log_warn!(self.logger, "ERROR: Could not sync broadcasted tx ({txid}), will be synced in next iteration: {e:?}");
-        }
-
-        if let Some(cb) = self.ln_event_callback.as_ref() {
-            let event = CommonLnEvent::TxBroadcasted {
-                txid: format!("{:x}", txid),
-                hex_tx: bitcoin::consensus::encode::serialize_hex(&tx),
-            };
-            cb.trigger(event);
-            log_debug!(self.logger, "Triggered TxBroadcasted event");
         }
 
         Ok(())
@@ -893,6 +928,12 @@ impl<S: MutinyStorage> WalletSource for OnChainWallet<S> {
         psbt.extract_tx()
             .map_err(|e| log_error!(self.logger, "Extract signed transaction: {e:?}"))
     }
+}
+
+fn is_tx_1_in_multi_out(tx: &Transaction) -> bool {
+    let has_one_input = tx.input.len() == 1;
+    let has_multiple_outputs = tx.output.len() > 1;
+    has_one_input && has_multiple_outputs
 }
 
 #[cfg(test)]

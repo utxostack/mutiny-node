@@ -43,10 +43,12 @@ use crate::error::MutinyError;
 pub use crate::gossip::{GOSSIP_SYNC_TIME_KEY, NETWORK_GRAPH_KEY, PROB_SCORER_KEY};
 pub use crate::keymanager::generate_seed;
 pub use crate::ldkstorage::{
-    CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY, MONITORS_PREFIX_KEY,
+    BROADCAST_TX_1_IN_MULTI_OUT, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX,
+    CHANNEL_MANAGER_KEY, MONITORS_PREFIX_KEY,
 };
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
+pub use crate::onchain::BroadcastTx1InMultiOut;
 use crate::storage::get_invoice_by_hash;
 use crate::utils::sleep;
 use crate::utils::spawn;

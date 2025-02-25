@@ -14,6 +14,7 @@ use mutiny_core::logging::LOGGING_KEY;
 use mutiny_core::nodemanager::NodeStorage;
 use mutiny_core::storage::*;
 use mutiny_core::vss::*;
+use mutiny_core::BroadcastTx1InMultiOut;
 use mutiny_core::*;
 use mutiny_core::{
     encrypt::Cipher,
@@ -634,6 +635,38 @@ impl IndexedDbStorage {
                                 obj.value.clone(),
                             )
                             .is_ok()
+                            {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
+                } else if key.starts_with(BROADCAST_TX_1_IN_MULTI_OUT) {
+                    match current.get_data::<BroadcastTx1InMultiOut>(&kv.key)? {
+                        Some(tx) => {
+                            if (tx.timestamp as u32) < kv.version {
+                                let obj = vss.get_object(&kv.key).await?;
+                                if serde_json::from_value::<BroadcastTx1InMultiOut>(
+                                    obj.value.clone(),
+                                )
+                                .is_ok()
+                                {
+                                    return Ok(Some((kv.key, obj.value)));
+                                }
+                            } else {
+                                log_debug!(
+                                    logger,
+                                    "Skipping vss key {} with version {}, current version is {}",
+                                    kv.key,
+                                    kv.version,
+                                    tx.timestamp
+                                );
+                                return Ok(None);
+                            }
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<BroadcastTx1InMultiOut>(obj.value.clone())
+                                .is_ok()
                             {
                                 return Ok(Some((kv.key, obj.value)));
                             }
