@@ -28,7 +28,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 use uuid::Uuid;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 pub const SUBSCRIPTION_TIMESTAMP: &str = "subscription_timestamp";
 pub const KEYCHAIN_STORE_KEY: &str = "bdk_keychain";
@@ -241,7 +245,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
 
         // save to VSS by spawn an async task
-        log_debug!(self.logger(), "writing to VSS");
+        log_debug!(self.logger(), "writing to VSS {:?}", key);
         if let Some(cb) = self.ln_event_callback().as_ref() {
             let event = CommonLnEvent::SyncToVssStarting {
                 key: key.clone(),
@@ -250,7 +254,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
             };
             cb.trigger(event);
         }
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         self.spawn({
             let db = self.clone();
             let logger = self.logger().clone();
@@ -259,7 +263,8 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
                 let duration = start.elapsed();
                 log_debug!(
                     logger,
-                    "done writing to VSS, took {:?}",
+                    "done writing to VSS {:?}, took {:?}ms",
+                    key,
                     duration.as_millis()
                 );
                 if let Some(cb) = db.ln_event_callback().as_ref() {
