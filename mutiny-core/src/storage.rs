@@ -1,5 +1,6 @@
 use crate::ldkstorage::CHANNEL_MANAGER_KEY;
 use crate::logging::MutinyLogger;
+use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::nodemanager::{ChannelClosure, NodeStorage};
 use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
@@ -27,7 +28,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 use uuid::Uuid;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 pub const SUBSCRIPTION_TIMESTAMP: &str = "subscription_timestamp";
 pub const KEYCHAIN_STORE_KEY: &str = "bdk_keychain";
@@ -184,6 +189,12 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     /// Get the VSS client used for storage
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>>;
 
+    /// Get the event callback
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback>;
+
+    /// Get logger
+    fn logger(&self) -> Arc<MutinyLogger>;
+
     /// An index of the activity in the storage, this should be a list of (timestamp, key) tuples
     /// This is used to for getting a sorted list of keys quickly
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>>;
@@ -229,10 +240,44 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         let json: Value = encrypt_value(key_clone.clone(), local_data, self.cipher())?;
         self.write_raw(vec![(key_clone, json)])?;
 
+        if self.vss_client().is_none() || version.is_none() {
+            return Ok(());
+        }
+
         // save to VSS by spawn an async task
+        log_debug!(self.logger(), "writing to VSS {:?}", key);
+        if let Some(cb) = self.ln_event_callback().as_ref() {
+            let event = CommonLnEvent::SyncToVssStarting {
+                key: key.clone(),
+                version,
+                timestamp: now().as_secs(),
+            };
+            cb.trigger(event);
+        }
+        let start = Instant::now();
         self.spawn({
             let db = self.clone();
-            async move { db.write_vss(key, data, version).await }
+            let logger = self.logger().clone();
+            async move {
+                let ret = db.write_vss(key.clone(), data, version).await;
+                let duration = start.elapsed();
+                log_debug!(
+                    logger,
+                    "done writing to VSS {:?}, took {:?}ms",
+                    key,
+                    duration.as_millis()
+                );
+                if let Some(cb) = db.ln_event_callback().as_ref() {
+                    let event = CommonLnEvent::SyncToVssCompleted {
+                        key: key.clone(),
+                        version,
+                        timestamp: now().as_secs(),
+                        duration_ms: duration.as_millis(),
+                    };
+                    cb.trigger(event);
+                }
+                ret
+            }
         });
 
         Ok(())
@@ -560,6 +605,8 @@ pub struct MemoryStorage {
     pub cipher: Option<Cipher>,
     pub memory: Arc<RwLock<HashMap<String, Value>>>,
     pub vss_client: Option<Arc<MutinyVssClient>>,
+    pub ln_event_callback: Option<CommonLnEventCallback>,
+    pub logger: Arc<MutinyLogger>,
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     pub activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
     tasks: Arc<DBTasks>,
@@ -570,6 +617,8 @@ impl MemoryStorage {
         password: Option<String>,
         cipher: Option<Cipher>,
         vss_client: Option<Arc<MutinyVssClient>>,
+        ln_event_callback: Option<CommonLnEventCallback>,
+        logger: Arc<MutinyLogger>,
     ) -> Self {
         Self {
             database: "memdb".to_string(),
@@ -577,6 +626,8 @@ impl MemoryStorage {
             password,
             memory: Arc::new(RwLock::new(HashMap::new())),
             vss_client,
+            ln_event_callback,
+            logger,
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
             tasks: Arc::new(DBTasks::default()),
@@ -604,7 +655,7 @@ impl MemoryStorage {
 
 impl Default for MemoryStorage {
     fn default() -> Self {
-        Self::new(None, None, None)
+        Self::new(None, None, None, None, Arc::new(MutinyLogger::default()))
     }
 }
 
@@ -624,6 +675,14 @@ impl MutinyStorage for MemoryStorage {
 
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>> {
         self.vss_client.clone()
+    }
+
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
+        self.ln_event_callback.clone()
+    }
+
+    fn logger(&self) -> Arc<MutinyLogger> {
+        self.logger.clone()
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
@@ -761,6 +820,14 @@ impl MutinyStorage for () {
 
     fn vss_client(&self) -> Option<Arc<MutinyVssClient>> {
         None
+    }
+
+    fn ln_event_callback(&self) -> Option<CommonLnEventCallback> {
+        None
+    }
+
+    fn logger(&self) -> Arc<MutinyLogger> {
+        Arc::new(MutinyLogger::default())
     }
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
@@ -1058,7 +1125,7 @@ mod tests {
     use crate::test_utils::*;
 
     use crate::{encrypt::encryption_key_from_pass, storage::MemoryStorage};
-    use crate::{keymanager, storage::MutinyStorage};
+    use crate::{keymanager, storage::MutinyStorage, MutinyLogger};
 
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
@@ -1087,7 +1154,13 @@ mod tests {
 
         let pass = uuid::Uuid::new_v4().to_string();
         let cipher = encryption_key_from_pass(&pass).unwrap();
-        let storage = MemoryStorage::new(Some(pass), Some(cipher), None);
+        let storage = MemoryStorage::new(
+            Some(pass),
+            Some(cipher),
+            None,
+            None,
+            std::sync::Arc::new(MutinyLogger::default()),
+        );
 
         let mnemonic = storage.insert_mnemonic(seed).unwrap();
 

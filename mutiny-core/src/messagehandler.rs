@@ -73,6 +73,19 @@ pub enum CommonLnEvent {
         hex_tx: String,
         timestamp: u64,
     },
+    // Before sync to VSS
+    SyncToVssStarting {
+        key: String,
+        version: Option<u32>,
+        timestamp: u64,
+    },
+    // Sync to VSS completed
+    SyncToVssCompleted {
+        key: String,
+        version: Option<u32>,
+        timestamp: u64,
+        duration_ms: u128,
+    },
 }
 
 #[derive(Clone)]

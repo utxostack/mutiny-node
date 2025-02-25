@@ -307,8 +307,15 @@ impl MutinyWallet {
             }
         };
 
-        let storage =
-            IndexedDbStorage::new(database, password, cipher, vss_client, logger.clone()).await?;
+        let storage = IndexedDbStorage::new(
+            database,
+            password,
+            cipher,
+            vss_client,
+            ln_event_callback.clone(),
+            logger.clone(),
+        )
+        .await?;
 
         let mut config_builder = MutinyWalletConfigBuilder::new(xprivkey).with_network(network);
         if let Some(w) = websocket_proxy_addr {
@@ -1203,7 +1210,7 @@ impl MutinyWallet {
             .map(|p| encryption_key_from_pass(p))
             .transpose()?;
         // todo init vss
-        let storage = IndexedDbStorage::new(database, password, cipher, None, logger).await?;
+        let storage = IndexedDbStorage::new(database, password, cipher, None, None, logger).await?;
         if storage.get_mnemonic().is_err() {
             // if we get an error, then we have the wrong password
             return Err(MutinyJsError::IncorrectPassword);
@@ -1246,7 +1253,7 @@ impl MutinyWallet {
             .map(|p| encryption_key_from_pass(p))
             .transpose()?;
         let storage =
-            IndexedDbStorage::new(database, password, cipher, None, logger.clone()).await?;
+            IndexedDbStorage::new(database, password, cipher, None, None, logger.clone()).await?;
         mutiny_core::MutinyWallet::<IndexedDbStorage>::restore_mnemonic(
             storage,
             Mnemonic::from_str(&m).map_err(|_| MutinyJsError::InvalidMnemonic)?,
