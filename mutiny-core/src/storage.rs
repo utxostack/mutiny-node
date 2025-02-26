@@ -162,7 +162,7 @@ impl DeviceLock {
     }
 
     /// Check if the device is locked
-    /// This is determined if the time is less than 2 minutes ago
+    /// This is determined if the time is less than `2 * DEVICE_LOCK_INTERVAL_SECS` ago
     pub fn is_locked(&self, id: &str) -> bool {
         let now = now().as_secs();
         let diff = now.saturating_sub(self.time as u64);
