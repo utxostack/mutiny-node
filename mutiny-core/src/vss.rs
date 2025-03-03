@@ -1,15 +1,21 @@
 use crate::authclient::MutinyAuthClient;
 use crate::encrypt::{decrypt_with_key, encrypt_with_key};
+use crate::utils;
+use crate::DEVICE_LOCK_INTERVAL_SECS;
 use crate::{error::MutinyError, logging::MutinyLogger};
 use anyhow::anyhow;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
+use futures::lock::Mutex;
 use hex_conservative::DisplayHex;
 use lightning::util::logger::*;
-use lightning::{log_error, log_info};
+use lightning::{log_error, log_info, log_warn};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
+
+const VSS_TIMEOUT_DURATION: u64 = DEVICE_LOCK_INTERVAL_SECS * 2 * 3; // 3x the device lock lifetime
 
 pub struct MutinyVssClient {
     auth_client: Option<Arc<MutinyAuthClient>>,
@@ -196,5 +202,56 @@ impl MutinyVssClient {
             })?;
 
         Ok(result)
+    }
+}
+
+#[derive(Debug)]
+struct VssPendingWrite {
+    start_timestamp: u64,
+}
+
+pub(crate) struct VssManager {
+    pending_writes: Arc<Mutex<HashMap<String, VssPendingWrite>>>,
+    logger: Arc<MutinyLogger>,
+}
+
+impl VssManager {
+    pub fn new(logger: Arc<MutinyLogger>) -> Self {
+        Self {
+            pending_writes: Arc::new(Mutex::new(HashMap::new())),
+            logger,
+        }
+    }
+
+    pub async fn start_write(&self, key: String, start_timestamp: u64) {
+        let mut pending_writes = self.pending_writes.lock().await;
+        pending_writes.insert(key, VssPendingWrite { start_timestamp });
+    }
+
+    pub async fn complete_write(&self, key: String) {
+        let mut pending_writes = self.pending_writes.lock().await;
+        pending_writes.remove(&key);
+    }
+
+    pub async fn has_in_progress(&self) -> bool {
+        self.check_timeout().await;
+        let writes = self.pending_writes.lock().await;
+        !writes.is_empty()
+    }
+
+    pub async fn check_timeout(&self) {
+        let current_time = utils::now().as_secs();
+        let mut writes = self.pending_writes.lock().await;
+        writes.retain(|key, write| {
+            let valid = current_time - write.start_timestamp < VSS_TIMEOUT_DURATION;
+            if !valid {
+                log_warn!(
+                    self.logger,
+                    "VSS write timeout: {}. VSS Manager will ignoring this record.",
+                    key
+                );
+            }
+            valid
+        });
     }
 }
