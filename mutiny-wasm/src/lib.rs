@@ -31,10 +31,10 @@ use mutiny_core::authclient::MutinyAuthClient;
 use mutiny_core::authmanager::AuthManager;
 use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
-use mutiny_core::messagehandler::CommonLnEventCallback;
+use mutiny_core::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
-use mutiny_core::vss::MutinyVssClient;
+use mutiny_core::vss::{MutinyVssClient, VSS_MANAGER};
 use mutiny_core::MutinyWalletBuilder;
 use mutiny_core::{
     encrypt::{encrypt, encryption_key_from_pass},
@@ -119,6 +119,16 @@ impl MutinyWallet {
 
         let ln_event_callback = ln_event_topic.map(|topic| CommonLnEventCallback {
             callback: Arc::new(move |event| {
+                match &event {
+                    CommonLnEvent::SyncToVssStarting { key, timestamp, .. } => {
+                        VSS_MANAGER.start_write(key.clone(), *timestamp);
+                    }
+                    CommonLnEvent::SyncToVssCompleted { key, .. } => {
+                        VSS_MANAGER.complete_write(key.clone());
+                    }
+                    _ => {}
+                }
+
                 const KEY: &str = "common_ln_event_broadcast_channel";
                 let global = web_sys::js_sys::global();
                 let value = web_sys::js_sys::Reflect::get(&global, &(KEY.into())).unwrap();
@@ -210,6 +220,8 @@ impl MutinyWallet {
 
         let version = env!("CARGO_PKG_VERSION");
         log_info!(logger, "Node version {version}");
+
+        VSS_MANAGER.set_logger(logger.clone());
 
         let cipher = password
             .as_ref()

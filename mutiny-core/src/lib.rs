@@ -50,8 +50,8 @@ use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 pub use crate::onchain::BroadcastTx1InMultiOut;
 use crate::storage::get_invoice_by_hash;
-use crate::utils::sleep;
-use crate::utils::spawn;
+use crate::utils::{sleep, spawn};
+use crate::vss::VSS_MANAGER;
 use crate::{authclient::MutinyAuthClient, logging::MutinyLogger};
 use crate::{
     event::{HTLCStatus, MillisatAmount, PaymentInfo},
@@ -913,6 +913,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 if let Err(e) = storage_clone.set_device_lock(&logger_clone) {
                     log_error!(logger_clone, "Error setting device lock: {e}");
                 }
+
+                log_debug!(
+                    logger_clone,
+                    "Vss pending writes: {:?}",
+                    VSS_MANAGER.get_pending_writes()
+                );
 
                 let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32;
                 while !stop_signal.stopping() && remained_sleep_ms > 0 {
