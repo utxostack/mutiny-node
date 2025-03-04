@@ -19,6 +19,7 @@ use serde_json::Value;
 use std::sync::{atomic::AtomicBool, Arc};
 use voltage::LspClient;
 
+pub mod lndchannel;
 pub mod lsps;
 pub mod voltage;
 

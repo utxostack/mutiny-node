@@ -402,6 +402,7 @@ impl<S: MutinyStorage> NodeManagerBuilder<S> {
                 },
             )
         };
+        log_debug!(logger, "LSP config: {:?}", lsp_config);
         log_trace!(logger, "finished creating lsp config");
 
         log_trace!(logger, "getting nodes from storage");

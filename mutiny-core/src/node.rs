@@ -559,6 +559,17 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             }
             None => (None, None, None),
         };
+        if let Some(lsp_client) = lsp_client.as_ref() {
+            let lsp_connection_string = lsp_client.get_lsp_connection_string().await;
+            let lsp_pubkey = lsp_client.get_lsp_pubkey().await;
+            log_debug!(
+                logger,
+                "LSP client is VoltageFlow: {:?}",
+                !lsp_client.is_lsps()
+            );
+            log_info!(logger, "LSP pubkey: {:?}", lsp_pubkey);
+            log_info!(logger, "LSP connection string: {:?}", lsp_connection_string);
+        }
         log_trace!(logger, "finished creating lsp client");
 
         log_trace!(logger, "creating onion routers");
