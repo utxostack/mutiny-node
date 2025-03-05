@@ -916,6 +916,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             loop {
                 if stop_signal.stopping() {
                     log_debug!(logger_clone, "stopping claim device lock");
+                    while VSS_MANAGER.has_in_progress() {
+                        log_debug!(logger_clone, "waiting for VSS to finish");
+                        sleep(300).await;
+                    }
                     if let Err(e) = storage_clone.release_device_lock(&logger_clone) {
                         log_error!(logger_clone, "Error releasing device lock: {e}");
                     }
