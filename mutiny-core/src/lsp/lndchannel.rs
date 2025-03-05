@@ -1,9 +1,12 @@
 use crate::logging::MutinyLogger;
+use crate::utils::now;
 use crate::{error::MutinyError, utils};
 
 use lightning::{log_error, util::logger::*};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+
+use std::collections::BTreeMap;
 
 const CHANNELS: &str = "/api/v1/ln/channels";
 
@@ -78,4 +81,39 @@ pub(crate) async fn fetch_lnd_channels(
     })?;
 
     Ok(channels_response.channels)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LndChannelsSnapshot {
+    pub snapshot: BTreeMap<String, u64>,
+    pub timestamp: u32,
+}
+
+impl LndChannelsSnapshot {
+    pub fn from_channels(channels: Vec<LndChannel>) -> Self {
+        let snapshot = channels
+            .into_iter()
+            .map(|channel| (channel.chan_id, channel.num_updates))
+            .collect::<BTreeMap<_, _>>();
+        LndChannelsSnapshot {
+            snapshot,
+            timestamp: now().as_secs() as u32,
+        }
+    }
+}
+
+impl From<Vec<LndChannel>> for LndChannelsSnapshot {
+    fn from(channels: Vec<LndChannel>) -> Self {
+        LndChannelsSnapshot::from_channels(channels)
+    }
+}
+
+pub(crate) async fn fetch_lnd_channels_snapshot(
+    http_client: &Client,
+    url: &str,
+    pubkey: &str,
+    logger: &MutinyLogger,
+) -> Result<LndChannelsSnapshot, MutinyError> {
+    let channels = fetch_lnd_channels(http_client, url, pubkey, logger).await?;
+    Ok(channels.into())
 }

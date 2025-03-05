@@ -24,7 +24,7 @@ use bitcoin::{Address, Network, OutPoint, Txid};
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
 
-use lightning::{log_debug, log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
+use lightning::{log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
 use mutiny_core::authclient::MutinyAuthClient;
@@ -106,6 +106,7 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_topic: Option<String>,
+        check_lnd_snapshot: bool,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
 
@@ -121,10 +122,10 @@ impl MutinyWallet {
             callback: Arc::new(move |event| {
                 match &event {
                     CommonLnEvent::SyncToVssStarting { key, timestamp, .. } => {
-                        VSS_MANAGER.start_write(key.clone(), *timestamp);
+                        VSS_MANAGER.on_start_write(key.clone(), *timestamp);
                     }
                     CommonLnEvent::SyncToVssCompleted { key, .. } => {
-                        VSS_MANAGER.complete_write(key.clone());
+                        VSS_MANAGER.on_complete_write(key.clone());
                     }
                     _ => {}
                 }
@@ -169,6 +170,7 @@ impl MutinyWallet {
             blind_auth_url,
             hermes_url,
             ln_event_callback,
+            check_lnd_snapshot,
         )
         .await
         {
@@ -214,6 +216,7 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_callback: Option<CommonLnEventCallback>,
+        check_lnd_snapshot: bool,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::memory_only());
@@ -389,6 +392,9 @@ impl MutinyWallet {
         }
         if safe_mode {
             config_builder.with_safe_mode();
+        }
+        if check_lnd_snapshot {
+            config_builder.do_check_lnd_snapshot();
         }
         let config = config_builder.build();
 
@@ -1408,6 +1414,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1452,6 +1459,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1490,6 +1498,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await;
 
@@ -1541,6 +1550,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1578,6 +1588,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await;
 
@@ -1632,6 +1643,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1688,6 +1700,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1731,6 +1744,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await;
 
@@ -1774,6 +1788,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1847,6 +1862,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1911,6 +1927,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .await
         .expect("mutiny wallet should initialize");

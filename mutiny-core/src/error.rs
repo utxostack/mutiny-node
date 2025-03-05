@@ -21,6 +21,8 @@ pub enum MutinyError {
     /// Returned when trying to start Mutiny while it is already running.
     #[error("Mutiny is already running.")]
     AlreadyRunning,
+    #[error("The stored LND snapshot is outdated.")]
+    LndSnapshotOutdated,
     /// Returned when trying to stop Mutiny while it is not running.
     #[error("Mutiny is not running.")]
     NotRunning,

@@ -249,7 +249,7 @@ impl VssManager {
         *guard = Some(logger);
     }
 
-    pub fn start_write(&self, key: String, start_timestamp: u64) {
+    pub fn on_start_write(&self, key: String, start_timestamp: u64) {
         let mut pending_writes = self
             .pending_writes
             .lock()
@@ -257,7 +257,7 @@ impl VssManager {
         pending_writes.insert(key, VssPendingWrite { start_timestamp });
     }
 
-    pub fn complete_write(&self, key: String) {
+    pub fn on_complete_write(&self, key: String) {
         let mut pending_writes = self.pending_writes.lock().expect(
             "
             Failed to lock pending writes",
@@ -274,7 +274,7 @@ impl VssManager {
         !writes.is_empty()
     }
 
-    pub fn check_timeout(&self) {
+    fn check_timeout(&self) {
         let current_time = utils::now().as_secs();
         let mut writes = self.pending_writes.lock().expect(
             "

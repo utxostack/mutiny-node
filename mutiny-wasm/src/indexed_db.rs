@@ -19,6 +19,7 @@ use mutiny_core::*;
 use mutiny_core::{
     encrypt::Cipher,
     error::{MutinyError, MutinyStorageError},
+    lsp::lndchannel::LndChannelsSnapshot,
 };
 use nodemanager::ChannelClosure;
 use rexie::{ObjectStore, Rexie, TransactionMode};
@@ -678,16 +679,44 @@ impl IndexedDbStorage {
                 } else if key.starts_with(ACTIVE_NODE_ID) {
                     match current.get_data::<String>(&kv.key)? {
                         Some(node_id) => {
-                            if node_id != kv.key {
+                            let obj = vss.get_object(&kv.key).await?;
+                            let node_id_from_vss =
+                                serde_json::from_value::<String>(obj.value.clone())
+                                    .with_context(|| "deserialize node id from vss")?;
+                            if node_id != node_id_from_vss {
+                                log_error!(
+                                    logger,
+                                    "Node ID from VSS {} does not match current node ID {}",
+                                    node_id_from_vss,
+                                    node_id
+                                );
+                            }
+                            return Ok(None);
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<String>(obj.value.clone()).is_ok() {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
+                } else if key.starts_with(LND_CHANNELS_SNAPSHOT_KEY) {
+                    match current.get_data::<LndChannelsSnapshot>(&kv.key)? {
+                        Some(snapshot) => {
+                            if snapshot.timestamp < kv.version {
                                 let obj = vss.get_object(&kv.key).await?;
-                                if serde_json::from_value::<String>(obj.value.clone()).is_ok() {
+                                if serde_json::from_value::<LndChannelsSnapshot>(obj.value.clone())
+                                    .is_ok()
+                                {
                                     return Ok(Some((kv.key, obj.value)));
                                 }
                             }
                         }
                         None => {
                             let obj = vss.get_object(&kv.key).await?;
-                            if serde_json::from_value::<String>(obj.value.clone()).is_ok() {
+                            if serde_json::from_value::<LndChannelsSnapshot>(obj.value.clone())
+                                .is_ok()
+                            {
                                 return Ok(Some((kv.key, obj.value)));
                             }
                         }

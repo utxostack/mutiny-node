@@ -43,14 +43,16 @@ use crate::error::MutinyError;
 pub use crate::gossip::{GOSSIP_SYNC_TIME_KEY, NETWORK_GRAPH_KEY, PROB_SCORER_KEY};
 pub use crate::keymanager::generate_seed;
 pub use crate::ldkstorage::{
-    BROADCAST_TX_1_IN_MULTI_OUT, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX,
-    CHANNEL_MANAGER_KEY, MONITORS_PREFIX_KEY,
+    ACTIVE_NODE_ID, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY,
+    MONITORS_PREFIX_KEY,
 };
+use crate::lsp::lndchannel::fetch_lnd_channels_snapshot;
+use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 pub use crate::onchain::BroadcastTx1InMultiOut;
-use crate::storage::get_invoice_by_hash;
-use crate::utils::{sleep, spawn};
+use crate::storage::{get_invoice_by_hash, LND_CHANNELS_SNAPSHOT_KEY};
+use crate::utils::{now, sleep, spawn, spawn_with_handle, StopHandle};
 use crate::vss::VSS_MANAGER;
 use crate::{authclient::MutinyAuthClient, logging::MutinyLogger};
 use crate::{
@@ -67,7 +69,7 @@ use crate::{
         PAYMENT_INBOUND_PREFIX_KEY, PAYMENT_OUTBOUND_PREFIX_KEY, TRANSACTION_DETAILS_PREFIX_KEY,
     },
 };
-use anyhow::Context;
+
 use bdk_chain::ConfirmationTime;
 use bip39::Mnemonic;
 pub use bitcoin;
@@ -77,6 +79,7 @@ use bitcoin::{bip32::Xpriv, Transaction};
 use bitcoin::{hashes::sha256, Network, Txid};
 use bitcoin::{hashes::Hash, Address};
 
+use anyhow::Context;
 use futures_util::lock::Mutex;
 use hex_conservative::{DisplayHex, FromHex};
 use itertools::Itertools;
@@ -87,10 +90,8 @@ use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace, log_warn};
 pub use lightning_invoice;
 use lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription};
-
-use messagehandler::CommonLnEventCallback;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use utils::{spawn_with_handle, StopHandle};
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -99,7 +100,6 @@ use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -548,6 +548,7 @@ pub struct MutinyWalletConfigBuilder {
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
+    check_lnd_snapshot: bool,
 }
 
 impl MutinyWalletConfigBuilder {
@@ -572,6 +573,7 @@ impl MutinyWalletConfigBuilder {
             skip_device_lock: false,
             safe_mode: false,
             skip_hodl_invoices: true,
+            check_lnd_snapshot: false,
         }
     }
 
@@ -647,6 +649,10 @@ impl MutinyWalletConfigBuilder {
         self.skip_hodl_invoices = false;
     }
 
+    pub fn do_check_lnd_snapshot(&mut self) {
+        self.check_lnd_snapshot = true;
+    }
+
     pub fn build(self) -> MutinyWalletConfig {
         let network = self.network.expect("network is required");
 
@@ -670,6 +676,7 @@ impl MutinyWalletConfigBuilder {
             skip_device_lock: self.skip_device_lock,
             safe_mode: self.safe_mode,
             skip_hodl_invoices: self.skip_hodl_invoices,
+            check_lnd_snapshot: false,
         }
     }
 }
@@ -695,6 +702,7 @@ pub struct MutinyWalletConfig {
     skip_device_lock: bool,
     pub safe_mode: bool,
     skip_hodl_invoices: bool,
+    check_lnd_snapshot: bool,
 }
 
 pub struct MutinyWalletBuilder<S: MutinyStorage> {
@@ -817,7 +825,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         let network = self
             .network
             .map_or_else(|| Err(MutinyError::InvalidArgumentsError), Ok)?;
-        let config = self.config.unwrap_or(
+        let config = self.config.clone().unwrap_or(
             MutinyWalletConfigBuilder::new(self.xprivkey)
                 .with_network(network)
                 .build(),
@@ -844,12 +852,15 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
         // Need to prevent other devices from running at the same time
         log_debug!(logger, "checking device lock");
+        let lsp_url = config.lsp_url.clone().expect("lsp_url is required");
         if !config.skip_device_lock {
             let start = Instant::now();
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "Current device lock: {lock:?}");
             }
-            self.storage.set_device_lock(&logger)?;
+            self.storage
+                .set_device_lock(&logger, &lsp_url, config.check_lnd_snapshot)
+                .await?;
             log_debug!(
                 logger,
                 "Device lock set: took {}ms",
@@ -910,7 +921,63 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     }
                     break;
                 }
-                if let Err(e) = storage_clone.set_device_lock(&logger_clone) {
+
+                let config = self.config.as_ref().expect("config is required");
+                if let Ok(Some(node_id)) = storage_clone.get_node_id() {
+                    match fetch_lnd_channels_snapshot(
+                        &Client::new(),
+                        &lsp_url,
+                        &node_id,
+                        &logger_clone,
+                    )
+                    .await
+                    {
+                        Ok(first_lnd_snapshot) => {
+                            log_debug!(
+                                logger_clone,
+                                "First fetched lnd snapshot: {:?}",
+                                first_lnd_snapshot
+                            );
+                            if !VSS_MANAGER.has_in_progress() {
+                                if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
+                                    &Client::new(),
+                                    &lsp_url,
+                                    &node_id,
+                                    &logger_clone,
+                                )
+                                .await
+                                {
+                                    log_debug!(
+                                        logger_clone,
+                                        "Second fetched lnd snapshot: {:?}",
+                                        second_lnd_snapshot
+                                    );
+                                    if first_lnd_snapshot.snapshot == second_lnd_snapshot.snapshot {
+                                        log_debug!(logger_clone, "Saving lnd snapshot");
+                                        if let Err(e) = storage_clone.write_data(
+                                            LND_CHANNELS_SNAPSHOT_KEY.to_string(),
+                                            &second_lnd_snapshot,
+                                            Some(now().as_secs() as u32),
+                                        ) {
+                                            log_error!(
+                                                logger_clone,
+                                                "Error saving lnd snapshot: {e}"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log_error!(logger_clone, "Error fetching lnd channels: {e}");
+                        }
+                    }
+                }
+
+                if let Err(e) = storage_clone
+                    .set_device_lock(&logger_clone, &lsp_url, config.check_lnd_snapshot)
+                    .await
+                {
                     log_error!(logger_clone, "Error setting device lock: {e}");
                 }
 
