@@ -32,8 +32,8 @@ use crate::labels::*;
 use crate::logging::MutinyLogger;
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::storage::{
-    IndexItem, MutinyStorage, BROADCAST_TX_1_IN_MULTI_OUT, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY,
-    ONCHAIN_PREFIX,
+    IndexItem, MutinyStorage, BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY, KEYCHAIN_STORE_KEY,
+    NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
 };
 use crate::utils;
 use crate::utils::{now, sleep};
@@ -148,7 +148,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         input: OutPoint,
         tx: BroadcastTx1InMultiOut,
     ) -> Result<(), MutinyError> {
-        let key = format!("{BROADCAST_TX_1_IN_MULTI_OUT}{}", input);
+        let key = format!("{BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY}{}", input);
         self.storage
             .write_data(key, tx.clone(), Some(tx.timestamp as u32))?;
         Ok(())

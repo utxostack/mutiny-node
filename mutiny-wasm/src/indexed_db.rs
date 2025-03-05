@@ -644,7 +644,7 @@ impl IndexedDbStorage {
                             }
                         }
                     }
-                } else if key.starts_with(BROADCAST_TX_1_IN_MULTI_OUT) {
+                } else if key.starts_with(BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY) {
                     match current.get_data::<BroadcastTx1InMultiOut>(&kv.key)? {
                         Some(tx) => {
                             if (tx.timestamp as u32) < kv.version {
@@ -676,7 +676,7 @@ impl IndexedDbStorage {
                             }
                         }
                     }
-                } else if key.starts_with(ACTIVE_NODE_ID) {
+                } else if key.starts_with(ACTIVE_NODE_ID_KEY) {
                     match current.get_data::<String>(&kv.key)? {
                         Some(node_id) => {
                             let obj = vss.get_object(&kv.key).await?;

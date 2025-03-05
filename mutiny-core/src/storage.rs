@@ -7,7 +7,7 @@ use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
 use crate::{
     encrypt::{decrypt_with_password, encrypt, encryption_key_from_pass, Cipher},
-    ACTIVE_NODE_ID, DEVICE_LOCK_INTERVAL_SECS,
+    ACTIVE_NODE_ID_KEY, DEVICE_LOCK_INTERVAL_SECS,
 };
 use crate::{
     error::{MutinyError, MutinyStorageError},
@@ -57,7 +57,7 @@ pub const LAST_DM_SYNC_TIME_KEY: &str = "last_dm_sync_time";
 pub const LAST_HERMES_SYNC_TIME_KEY: &str = "last_hermes_sync_time";
 pub const NOSTR_PROFILE_METADATA: &str = "nostr_profile_metadata";
 pub const NOSTR_CONTACT_LIST: &str = "nostr_contact_list";
-pub const BROADCAST_TX_1_IN_MULTI_OUT: &str = "broadcast_tx_1_in_multi_out/";
+pub const BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY: &str = "broadcast_tx_1_in_multi_out/";
 pub const LND_CHANNELS_SNAPSHOT_KEY: &str = "lnd_channels_snapshot";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -534,7 +534,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     }
 
     fn get_node_id(&self) -> Result<Option<String>, MutinyError> {
-        self.get_data(ACTIVE_NODE_ID)
+        self.get_data(ACTIVE_NODE_ID_KEY)
     }
 
     fn get_lnd_channels_snapshot(&self) -> Result<Option<LndChannelsSnapshot>, MutinyError> {

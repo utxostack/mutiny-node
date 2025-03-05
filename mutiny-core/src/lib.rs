@@ -43,7 +43,7 @@ use crate::error::MutinyError;
 pub use crate::gossip::{GOSSIP_SYNC_TIME_KEY, NETWORK_GRAPH_KEY, PROB_SCORER_KEY};
 pub use crate::keymanager::generate_seed;
 pub use crate::ldkstorage::{
-    ACTIVE_NODE_ID, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY,
+    ACTIVE_NODE_ID_KEY, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY,
     MONITORS_PREFIX_KEY,
 };
 use crate::lsp::lndchannel::fetch_lnd_channels_snapshot;
