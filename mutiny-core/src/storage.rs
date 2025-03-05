@@ -544,7 +544,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     async fn set_device_lock(
         &self,
         logger: &MutinyLogger,
-        lsp_url: &str,
+        lsp_url: Option<String>,
         check_lnd_snapshot: bool,
     ) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
@@ -555,10 +555,15 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
                 return Err(MutinyError::AlreadyRunning);
             }
 
-            if check_lnd_snapshot && !lock.is_last_locker(&device) {
+            if check_lnd_snapshot && !lock.is_last_locker(&device) && lsp_url.is_some() {
                 if let Ok(Some(node_id)) = self.get_node_id() {
-                    match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, logger)
-                        .await
+                    match fetch_lnd_channels_snapshot(
+                        &Client::new(),
+                        &lsp_url.unwrap(),
+                        &node_id,
+                        logger,
+                    )
+                    .await
                     {
                         Ok(lnd_channels_snapshot) => {
                             log_debug!(logger, "Fetched lnd channels: {:?}", lnd_channels_snapshot);

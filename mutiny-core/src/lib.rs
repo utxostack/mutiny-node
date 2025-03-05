@@ -852,14 +852,14 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
         // Need to prevent other devices from running at the same time
         log_debug!(logger, "checking device lock");
-        let lsp_url = config.lsp_url.clone().expect("lsp_url is required");
+        let lsp_url = config.lsp_url.clone();
         if !config.skip_device_lock {
             let start = Instant::now();
             if let Some(lock) = self.storage.get_device_lock()? {
                 log_info!(logger, "Current device lock: {lock:?}");
             }
             self.storage
-                .set_device_lock(&logger, &lsp_url, config.check_lnd_snapshot)
+                .set_device_lock(&logger, lsp_url.clone(), config.check_lnd_snapshot)
                 .await?;
             log_debug!(
                 logger,
@@ -927,10 +927,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 }
 
                 let config = self.config.as_ref().expect("config is required");
-                if let Ok(Some(node_id)) = storage_clone.get_node_id() {
+                if let (Some(lsp_url), Ok(Some(node_id))) =
+                    (config.lsp_url.as_ref(), storage_clone.get_node_id())
+                {
                     match fetch_lnd_channels_snapshot(
                         &Client::new(),
-                        &lsp_url,
+                        lsp_url,
                         &node_id,
                         &logger_clone,
                     )
@@ -945,7 +947,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                             if !VSS_MANAGER.has_in_progress() {
                                 if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
                                     &Client::new(),
-                                    &lsp_url,
+                                    lsp_url,
                                     &node_id,
                                     &logger_clone,
                                 )
@@ -979,7 +981,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 }
 
                 if let Err(e) = storage_clone
-                    .set_device_lock(&logger_clone, &lsp_url, config.check_lnd_snapshot)
+                    .set_device_lock(&logger_clone, lsp_url.clone(), config.check_lnd_snapshot)
                     .await
                 {
                     log_error!(logger_clone, "Error setting device lock: {e}");
