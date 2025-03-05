@@ -188,6 +188,8 @@ pub enum MutinyJsError {
     JwtAuthFailure,
     #[error("Failed to parse VSS value from getObject response.")]
     FailedParsingVssValue,
+    #[error("Cannot have more than one node.")]
+    TooManyNodes,
     /// Unknown error.
     #[error("Unknown Error")]
     UnknownError,

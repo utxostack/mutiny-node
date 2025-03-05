@@ -206,6 +206,10 @@ impl MutinyVssClient {
 
         Ok(result)
     }
+
+    pub fn get_store_id(&self) -> Option<String> {
+        self.store_id.clone()
+    }
 }
 
 #[derive(Debug, Clone)]

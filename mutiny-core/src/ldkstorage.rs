@@ -8,8 +8,7 @@ use crate::node::Router;
 use crate::node::{default_user_config, ChainMonitor};
 use crate::nodemanager::ChannelClosure;
 use crate::storage::{IndexItem, MutinyStorage, VersionedValue};
-use crate::utils;
-use crate::utils::{sleep, spawn};
+use crate::utils::{self, now, sleep, spawn};
 use crate::{chain::MutinyChain, scorer::HubPreferentialScorer};
 use anyhow::anyhow;
 use bitcoin::hashes::hex::FromHex;
@@ -47,7 +46,7 @@ const CHANNEL_OPENING_PARAMS_PREFIX: &str = "chan_open_params/";
 pub const CHANNEL_CLOSURE_PREFIX: &str = "channel_closure/";
 pub const CHANNEL_CLOSURE_BUMP_PREFIX: &str = "channel_closure_bump/";
 const FAILED_SPENDABLE_OUTPUT_DESCRIPTOR_KEY: &str = "failed_spendable_outputs";
-pub const BROADCAST_TX_1_IN_MULTI_OUT: &str = "broadcast_tx_1_in_multi_out/";
+pub const ACTIVE_NODE_ID: &str = "active_node_id";
 
 pub(crate) type PhantomChannelManager<S: MutinyStorage> = LdkChannelManager<
     Arc<ChainMonitor<S>>,
@@ -462,6 +461,14 @@ impl<S: MutinyStorage> MutinyNodePersister<S> {
         });
 
         Ok(())
+    }
+
+    pub(crate) fn persist_node_id(&self, node_id: String) -> Result<(), MutinyError> {
+        self.storage.write_data(
+            ACTIVE_NODE_ID.to_string(),
+            node_id,
+            Some(now().as_secs() as u32),
+        )
     }
 
     /// Persists the failed spendable outputs to storage.

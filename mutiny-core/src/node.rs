@@ -559,17 +559,6 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             }
             None => (None, None, None),
         };
-        if let Some(lsp_client) = lsp_client.as_ref() {
-            let lsp_connection_string = lsp_client.get_lsp_connection_string().await;
-            let lsp_pubkey = lsp_client.get_lsp_pubkey().await;
-            log_debug!(
-                logger,
-                "LSP client is VoltageFlow: {:?}",
-                !lsp_client.is_lsps()
-            );
-            log_info!(logger, "LSP pubkey: {:?}", lsp_pubkey);
-            log_info!(logger, "LSP connection string: {:?}", lsp_connection_string);
-        }
         log_trace!(logger, "finished creating lsp client");
 
         log_trace!(logger, "creating onion routers");
@@ -910,11 +899,10 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             log_trace!(logger, "finished spawning ldk reconnect thread");
         }
 
-        log_info!(
-            logger,
-            "Node started: {}",
-            keys_manager.get_node_id(Recipient::Node).unwrap()
-        );
+        let node_id = keys_manager.get_node_id(Recipient::Node).unwrap();
+        let node_id = node_id.serialize().to_lower_hex_string();
+        log_info!(logger, "Node started: {}", node_id);
+        persister.persist_node_id(node_id)?;
 
         let sync_lock = Arc::new(Mutex::new(()));
 

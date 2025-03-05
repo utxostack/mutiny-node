@@ -55,6 +55,7 @@ pub const LAST_DM_SYNC_TIME_KEY: &str = "last_dm_sync_time";
 pub const LAST_HERMES_SYNC_TIME_KEY: &str = "last_hermes_sync_time";
 pub const NOSTR_PROFILE_METADATA: &str = "nostr_profile_metadata";
 pub const NOSTR_CONTACT_LIST: &str = "nostr_contact_list";
+pub const BROADCAST_TX_1_IN_MULTI_OUT: &str = "broadcast_tx_1_in_multi_out/";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DelayedKeyValueItem {

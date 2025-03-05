@@ -24,7 +24,7 @@ use bitcoin::{Address, Network, OutPoint, Txid};
 use futures::lock::Mutex;
 use gloo_utils::format::JsValueSerdeExt;
 
-use lightning::{log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
+use lightning::{log_debug, log_info, log_warn, routing::gossip::NodeId, util::logger::Logger};
 use lightning_invoice::Bolt11Invoice;
 
 use mutiny_core::authclient::MutinyAuthClient;
@@ -42,7 +42,7 @@ use mutiny_core::{
 };
 use mutiny_core::{
     labels::LabelStorage,
-    nodemanager::{create_lsp_config, NodeManager},
+    nodemanager::{create_lsp_config, NodeIndex, NodeManager},
 };
 use mutiny_core::{logging::MutinyLogger, lsp::LspConfig};
 use web_sys::BroadcastChannel;
@@ -328,6 +328,17 @@ impl MutinyWallet {
             logger.clone(),
         )
         .await?;
+
+        let nodes = storage.get_nodes()?;
+        let unarchived_nodes: Vec<(String, NodeIndex)> = nodes
+            .clone()
+            .nodes
+            .into_iter()
+            .filter(|(_, n)| !n.is_archived())
+            .collect();
+        if unarchived_nodes.len() > 1 {
+            return Err(MutinyJsError::TooManyNodes);
+        }
 
         let mut config_builder = MutinyWalletConfigBuilder::new(xprivkey).with_network(network);
         if let Some(w) = websocket_proxy_addr {

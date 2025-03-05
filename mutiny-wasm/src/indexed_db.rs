@@ -675,6 +675,23 @@ impl IndexedDbStorage {
                             }
                         }
                     }
+                } else if key.starts_with(ACTIVE_NODE_ID) {
+                    match current.get_data::<String>(&kv.key)? {
+                        Some(node_id) => {
+                            if node_id != kv.key {
+                                let obj = vss.get_object(&kv.key).await?;
+                                if serde_json::from_value::<String>(obj.value.clone()).is_ok() {
+                                    return Ok(Some((kv.key, obj.value)));
+                                }
+                            }
+                        }
+                        None => {
+                            let obj = vss.get_object(&kv.key).await?;
+                            if serde_json::from_value::<String>(obj.value.clone()).is_ok() {
+                                return Ok(Some((kv.key, obj.value)));
+                            }
+                        }
+                    }
                 }
             }
         }
