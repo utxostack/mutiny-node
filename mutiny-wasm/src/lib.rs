@@ -106,7 +106,7 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_topic: Option<String>,
-        check_lnd_snapshot: bool,
+        check_lnd_snapshot: Option<bool>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
 
@@ -216,7 +216,7 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_callback: Option<CommonLnEventCallback>,
-        check_lnd_snapshot: bool,
+        check_lnd_snapshot: Option<bool>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::memory_only());
@@ -393,7 +393,7 @@ impl MutinyWallet {
         if safe_mode {
             config_builder.with_safe_mode();
         }
-        if check_lnd_snapshot {
+        if let Some(true) = check_lnd_snapshot {
             config_builder.do_check_lnd_snapshot();
         }
         let config = config_builder.build();
@@ -1414,7 +1414,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1459,7 +1459,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1498,7 +1498,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await;
 
@@ -1550,7 +1550,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1588,7 +1588,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await;
 
@@ -1643,7 +1643,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .unwrap();
@@ -1700,7 +1700,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .unwrap();
@@ -1744,7 +1744,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await;
 
@@ -1788,7 +1788,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1862,7 +1862,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1927,7 +1927,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
