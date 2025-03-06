@@ -566,10 +566,16 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
                     .await
                     {
                         Ok(lnd_channels_snapshot) => {
-                            log_debug!(logger, "Fetched lnd channels: {:?}", lnd_channels_snapshot);
+                            log_debug!(
+                                logger,
+                                "New fetched lnd snapshot: {:?}",
+                                lnd_channels_snapshot
+                            );
                             if let Some(local) = self.get_lnd_channels_snapshot()? {
-                                // After the initialization, local.snapshot == VSS.snapshot
+                                log_debug!(logger, "Local lnd snapshot: {:?}", local);
+                                // After the initialization, local.snapshot >= VSS.snapshot
                                 if local.snapshot != lnd_channels_snapshot.snapshot {
+                                    log_error!(logger, "Lnd snapshot outdated");
                                     return Err(MutinyError::LndSnapshotOutdated);
                                 }
                             }

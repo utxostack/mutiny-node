@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
 
-const CHANNELS: &str = "/api/v1/ln/channels";
+const CHANNELS_LSP_URL_PATH: &str = "/api/v1/ln/channels";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChannelConstraints {
@@ -58,7 +58,12 @@ pub(crate) async fn fetch_lnd_channels(
     pubkey: &str,
     logger: &MutinyLogger,
 ) -> Result<Vec<LndChannel>, MutinyError> {
-    let full_url = format!("{}{}/{}", url.trim_end_matches('/'), CHANNELS, pubkey);
+    let full_url = format!(
+        "{}{}/{}",
+        url.trim_end_matches('/'),
+        CHANNELS_LSP_URL_PATH,
+        pubkey
+    );
 
     let builder = http_client.get(&full_url);
     let request = builder.build().map_err(|_| MutinyError::LspGenericError)?;
