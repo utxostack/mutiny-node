@@ -676,7 +676,7 @@ impl MutinyWalletConfigBuilder {
             skip_device_lock: self.skip_device_lock,
             safe_mode: self.safe_mode,
             skip_hodl_invoices: self.skip_hodl_invoices,
-            check_lnd_snapshot: false,
+            check_lnd_snapshot: self.check_lnd_snapshot,
         }
     }
 }
