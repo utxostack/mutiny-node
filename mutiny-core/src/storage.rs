@@ -1,12 +1,13 @@
 use crate::ldkstorage::CHANNEL_MANAGER_KEY;
 use crate::logging::MutinyLogger;
+use crate::lsp::lndchannel::{fetch_lnd_channels_snapshot, LndChannelsSnapshot};
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::nodemanager::{ChannelClosure, NodeStorage};
 use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
 use crate::{
     encrypt::{decrypt_with_password, encrypt, encryption_key_from_pass, Cipher},
-    DEVICE_LOCK_INTERVAL_SECS,
+    ACTIVE_NODE_ID_KEY, DEVICE_LOCK_INTERVAL_SECS,
 };
 use crate::{
     error::{MutinyError, MutinyStorageError},
@@ -23,7 +24,8 @@ use bitcoin::Txid;
 use futures_util::lock::Mutex;
 use hex_conservative::*;
 use lightning::{ln::PaymentHash, util::logger::Logger};
-use lightning::{log_debug, log_trace};
+use lightning::{log_debug, log_error, log_trace};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -55,6 +57,8 @@ pub const LAST_DM_SYNC_TIME_KEY: &str = "last_dm_sync_time";
 pub const LAST_HERMES_SYNC_TIME_KEY: &str = "last_hermes_sync_time";
 pub const NOSTR_PROFILE_METADATA: &str = "nostr_profile_metadata";
 pub const NOSTR_CONTACT_LIST: &str = "nostr_contact_list";
+pub const BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY: &str = "broadcast_tx_1_in_multi_out/";
+pub const LND_CHANNELS_SNAPSHOT_KEY: &str = "lnd_channels_snapshot";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DelayedKeyValueItem {
@@ -529,13 +533,59 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         self.get_data(DEVICE_LOCK_KEY)
     }
 
-    fn set_device_lock(&self, logger: &MutinyLogger) -> Result<(), MutinyError> {
+    fn get_node_id(&self) -> Result<Option<String>, MutinyError> {
+        self.get_data(ACTIVE_NODE_ID_KEY)
+    }
+
+    fn get_lnd_channels_snapshot(&self) -> Result<Option<LndChannelsSnapshot>, MutinyError> {
+        self.get_data(LND_CHANNELS_SNAPSHOT_KEY)
+    }
+
+    async fn set_device_lock(
+        &self,
+        logger: &MutinyLogger,
+        lsp_url: Option<String>,
+        check_lnd_snapshot: bool,
+    ) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
         if let Some(lock) = self.get_device_lock()? {
             if lock.is_locked(&device) {
                 log_debug!(logger, "current device is {}", device);
                 log_debug!(logger, "locked device is {}", lock.device);
                 return Err(MutinyError::AlreadyRunning);
+            }
+
+            if check_lnd_snapshot && !lock.is_last_locker(&device) && lsp_url.is_some() {
+                if let Ok(Some(node_id)) = self.get_node_id() {
+                    match fetch_lnd_channels_snapshot(
+                        &Client::new(),
+                        &lsp_url.unwrap(),
+                        &node_id,
+                        logger,
+                    )
+                    .await
+                    {
+                        Ok(lnd_channels_snapshot) => {
+                            log_debug!(
+                                logger,
+                                "New fetched lnd snapshot: {:?}",
+                                lnd_channels_snapshot
+                            );
+                            if let Some(local) = self.get_lnd_channels_snapshot()? {
+                                log_debug!(logger, "Local lnd snapshot: {:?}", local);
+                                // After the initialization, local.snapshot >= VSS.snapshot
+                                if local.snapshot != lnd_channels_snapshot.snapshot {
+                                    log_error!(logger, "Lnd snapshot outdated");
+                                    return Err(MutinyError::LndSnapshotOutdated);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log_error!(logger, "Error fetching lnd channels: {e}");
+                            return Err(MutinyError::LspGenericError);
+                        }
+                    }
+                }
             }
         }
 

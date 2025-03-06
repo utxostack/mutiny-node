@@ -1,15 +1,24 @@
 use crate::authclient::MutinyAuthClient;
 use crate::encrypt::{decrypt_with_key, encrypt_with_key};
+use crate::utils;
+use crate::DEVICE_LOCK_INTERVAL_SECS;
 use crate::{error::MutinyError, logging::MutinyLogger};
 use anyhow::anyhow;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use hex_conservative::DisplayHex;
 use lightning::util::logger::*;
-use lightning::{log_error, log_info};
+use lightning::{log_error, log_info, log_warn};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
+use utils::Mutex;
+
+const VSS_TIMEOUT_DURATION: u64 = DEVICE_LOCK_INTERVAL_SECS * 2 * 3; // 3x the device lock lifetime
+
+pub static VSS_MANAGER: once_cell::sync::Lazy<VssManager> =
+    once_cell::sync::Lazy::new(VssManager::default);
 
 pub struct MutinyVssClient {
     auth_client: Option<Arc<MutinyAuthClient>>,
@@ -196,5 +205,100 @@ impl MutinyVssClient {
             })?;
 
         Ok(result)
+    }
+
+    pub fn get_store_id(&self) -> Option<String> {
+        self.store_id.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VssPendingWrite {
+    start_timestamp: u64,
+}
+
+pub struct VssManager {
+    pub pending_writes: Arc<Mutex<HashMap<String, VssPendingWrite>>>,
+    logger: Mutex<Option<Arc<MutinyLogger>>>,
+}
+
+impl Default for VssManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VssManager {
+    pub fn new() -> Self {
+        Self {
+            pending_writes: Arc::new(Mutex::new(HashMap::new())),
+            logger: Mutex::new(None),
+        }
+    }
+
+    pub fn get_pending_writes(&self) -> Vec<(String, VssPendingWrite)> {
+        let writes = self.pending_writes.lock().expect(
+            "
+            Failed to lock pending writes",
+        );
+        writes.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+
+    pub fn set_logger(&self, logger: Arc<MutinyLogger>) {
+        let mut guard = self.logger.lock().expect("Failed to lock logger");
+        *guard = Some(logger);
+    }
+
+    pub fn on_start_write(&self, key: String, start_timestamp: u64) {
+        let mut pending_writes = self
+            .pending_writes
+            .lock()
+            .expect("Failed to lock pending writes");
+        pending_writes.insert(key, VssPendingWrite { start_timestamp });
+    }
+
+    pub fn on_complete_write(&self, key: String) {
+        let mut pending_writes = self.pending_writes.lock().expect(
+            "
+            Failed to lock pending writes",
+        );
+        pending_writes.remove(&key);
+    }
+
+    pub fn has_in_progress(&self) -> bool {
+        self.check_timeout();
+        let writes = self.pending_writes.lock().expect(
+            "
+            Failed to lock pending writes",
+        );
+        !writes.is_empty()
+    }
+
+    fn check_timeout(&self) {
+        let current_time = utils::now().as_secs();
+        let mut writes = self.pending_writes.lock().expect(
+            "
+            Failed to lock pending writes",
+        );
+        let logger = {
+            let guard = self.logger.lock().expect(
+                "
+                Failed to lock logger",
+            );
+            guard.clone()
+        };
+        writes.retain(|key, write| {
+            let valid = current_time - write.start_timestamp < VSS_TIMEOUT_DURATION;
+            if !valid {
+                if let Some(logger) = &logger {
+                    log_warn!(
+                        logger,
+                        "VSS write timeout: {}. VSS Manager will ignoring this record.",
+                        key
+                    );
+                }
+            }
+            valid
+        });
     }
 }

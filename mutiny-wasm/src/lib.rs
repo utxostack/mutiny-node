@@ -31,10 +31,10 @@ use mutiny_core::authclient::MutinyAuthClient;
 use mutiny_core::authmanager::AuthManager;
 use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
-use mutiny_core::messagehandler::CommonLnEventCallback;
+use mutiny_core::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
-use mutiny_core::vss::MutinyVssClient;
+use mutiny_core::vss::{MutinyVssClient, VSS_MANAGER};
 use mutiny_core::MutinyWalletBuilder;
 use mutiny_core::{
     encrypt::{encrypt, encryption_key_from_pass},
@@ -42,7 +42,7 @@ use mutiny_core::{
 };
 use mutiny_core::{
     labels::LabelStorage,
-    nodemanager::{create_lsp_config, NodeManager},
+    nodemanager::{create_lsp_config, NodeIndex, NodeManager},
 };
 use mutiny_core::{logging::MutinyLogger, lsp::LspConfig};
 use web_sys::BroadcastChannel;
@@ -106,6 +106,7 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_topic: Option<String>,
+        check_lnd_snapshot: Option<bool>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let start = instant::Instant::now();
 
@@ -119,6 +120,16 @@ impl MutinyWallet {
 
         let ln_event_callback = ln_event_topic.map(|topic| CommonLnEventCallback {
             callback: Arc::new(move |event| {
+                match &event {
+                    CommonLnEvent::SyncToVssStarting { key, timestamp, .. } => {
+                        VSS_MANAGER.on_start_write(key.clone(), *timestamp);
+                    }
+                    CommonLnEvent::SyncToVssCompleted { key, .. } => {
+                        VSS_MANAGER.on_complete_write(key.clone());
+                    }
+                    _ => {}
+                }
+
                 const KEY: &str = "common_ln_event_broadcast_channel";
                 let global = web_sys::js_sys::global();
                 let value = web_sys::js_sys::Reflect::get(&global, &(KEY.into())).unwrap();
@@ -159,6 +170,7 @@ impl MutinyWallet {
             blind_auth_url,
             hermes_url,
             ln_event_callback,
+            check_lnd_snapshot,
         )
         .await
         {
@@ -204,12 +216,15 @@ impl MutinyWallet {
         blind_auth_url: Option<String>,
         hermes_url: Option<String>,
         ln_event_callback: Option<CommonLnEventCallback>,
+        check_lnd_snapshot: Option<bool>,
     ) -> Result<MutinyWallet, MutinyJsError> {
         let safe_mode = safe_mode.unwrap_or(false);
         let logger = Arc::new(MutinyLogger::memory_only());
 
         let version = env!("CARGO_PKG_VERSION");
         log_info!(logger, "Node version {version}");
+
+        VSS_MANAGER.set_logger(logger.clone());
 
         let cipher = password
             .as_ref()
@@ -317,6 +332,17 @@ impl MutinyWallet {
         )
         .await?;
 
+        let nodes = storage.get_nodes()?;
+        let unarchived_nodes: Vec<(String, NodeIndex)> = nodes
+            .clone()
+            .nodes
+            .into_iter()
+            .filter(|(_, n)| !n.is_archived())
+            .collect();
+        if unarchived_nodes.len() > 1 {
+            return Err(MutinyJsError::TooManyNodes);
+        }
+
         let mut config_builder = MutinyWalletConfigBuilder::new(xprivkey).with_network(network);
         if let Some(w) = websocket_proxy_addr {
             config_builder.with_websocket_proxy_addr(w);
@@ -366,6 +392,9 @@ impl MutinyWallet {
         }
         if safe_mode {
             config_builder.with_safe_mode();
+        }
+        if let Some(true) = check_lnd_snapshot {
+            config_builder.do_check_lnd_snapshot();
         }
         let config = config_builder.build();
 
@@ -1385,6 +1414,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1429,6 +1459,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1447,6 +1478,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1518,6 +1550,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1535,6 +1568,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1589,6 +1623,7 @@ mod tests {
             Some(seed.to_string()),
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1665,6 +1700,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1708,6 +1744,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1731,6 +1768,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,
@@ -1824,6 +1862,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("mutiny wallet should initialize");
@@ -1868,6 +1907,7 @@ mod tests {
             None,
             None,
             Some("regtest".to_owned()),
+            None,
             None,
             None,
             None,

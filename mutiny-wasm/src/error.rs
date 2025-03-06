@@ -9,6 +9,8 @@ pub enum MutinyJsError {
     /// Returned when trying to start Mutiny while it is already running.
     #[error("Mutiny is already running.")]
     AlreadyRunning,
+    #[error("The stored LND snapshot is outdated.")]
+    LndSnapshotOutdated,
     /// Returned when trying to stop Mutiny while it is not running.
     #[error("Mutiny is not running.")]
     NotRunning,
@@ -188,6 +190,8 @@ pub enum MutinyJsError {
     JwtAuthFailure,
     #[error("Failed to parse VSS value from getObject response.")]
     FailedParsingVssValue,
+    #[error("Cannot have more than one node.")]
+    TooManyNodes,
     /// Unknown error.
     #[error("Unknown Error")]
     UnknownError,
@@ -197,6 +201,7 @@ impl From<MutinyError> for MutinyJsError {
     fn from(e: MutinyError) -> Self {
         match e {
             MutinyError::AlreadyRunning => MutinyJsError::AlreadyRunning,
+            MutinyError::LndSnapshotOutdated => MutinyJsError::LndSnapshotOutdated,
             MutinyError::NotRunning => MutinyJsError::NotRunning,
             MutinyError::NotFound => MutinyJsError::NotFound,
             MutinyError::FundingTxCreationFailed => MutinyJsError::FundingTxCreationFailed,

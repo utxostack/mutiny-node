@@ -899,11 +899,10 @@ impl<S: MutinyStorage> NodeBuilder<S> {
             log_trace!(logger, "finished spawning ldk reconnect thread");
         }
 
-        log_info!(
-            logger,
-            "Node started: {}",
-            keys_manager.get_node_id(Recipient::Node).unwrap()
-        );
+        let node_id = keys_manager.get_node_id(Recipient::Node).unwrap();
+        let node_id = node_id.serialize().to_lower_hex_string();
+        log_info!(logger, "Node started: {}", node_id);
+        persister.persist_node_id(node_id)?;
 
         let sync_lock = Arc::new(Mutex::new(()));
 

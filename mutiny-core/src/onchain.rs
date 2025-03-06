@@ -29,11 +29,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::MutinyError;
 use crate::fees::MutinyFeeEstimator;
 use crate::labels::*;
-use crate::ldkstorage::BROADCAST_TX_1_IN_MULTI_OUT;
 use crate::logging::MutinyLogger;
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::storage::{
-    IndexItem, MutinyStorage, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
+    IndexItem, MutinyStorage, BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY, KEYCHAIN_STORE_KEY,
+    NEED_FULL_SYNC_KEY, ONCHAIN_PREFIX,
 };
 use crate::utils;
 use crate::utils::{now, sleep};
@@ -148,7 +148,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         input: OutPoint,
         tx: BroadcastTx1InMultiOut,
     ) -> Result<(), MutinyError> {
-        let key = format!("{BROADCAST_TX_1_IN_MULTI_OUT}{}", input);
+        let key = format!("{BROADCAST_TX_1_IN_MULTI_OUT_PREFIX_KEY}{}", input);
         self.storage
             .write_data(key, tx.clone(), Some(tx.timestamp as u32))?;
         Ok(())
