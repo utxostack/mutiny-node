@@ -2,7 +2,7 @@ cargo-features = ["per-package-target"]
 
 [package]
 name = "mutiny-wasm"
-version = "1.14.0"
+version = "1.14.1"
 edition = "2021"
 authors = ["utxostack"]
 forced-target = "wasm32-unknown-unknown"
@@ -41,7 +41,7 @@ instant = { version = "0.1", features = ["wasm-bindgen"] }
 log = { version = "0.4.17", features = ["std"] }
 rexie = "0.5.0"
 gloo-utils = { version = "0.2.0", features = ["serde"] }
-web-sys = { version = "0.3.60", features = ["console", "BroadcastChannel"] }
+web-sys = { version = "0.3.60", features = ["console", "BroadcastChannel", "Navigator"] }
 bip39 = { version = "2.0.0" }
 getrandom = { version = "0.2", features = ["js"] }
 futures = "0.3.25"
