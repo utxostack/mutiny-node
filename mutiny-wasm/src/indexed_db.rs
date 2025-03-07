@@ -29,7 +29,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 use utils::DBTasks;
 use wasm_bindgen::JsValue;
-use web_sys::window;
+use web_sys::js_sys;
 
 pub(crate) const WALLET_DATABASE_NAME: &str = "wallet";
 pub(crate) const WALLET_OBJECT_STORE_NAME: &str = "wallet_store";
@@ -87,7 +87,8 @@ impl IndexedDbStorage {
         let idx = Self::build_indexed_db_database(database.clone()).await?;
         let indexed_db = Arc::new(RwLock::new(RexieContainer(Some(idx))));
         let password = password.filter(|p| !p.is_empty());
-        let device_description = window().and_then(|win| win.navigator().user_agent().ok());
+        let device_description = Self::get_user_agent();
+        log_debug!(logger, "Device description: {:?}", device_description);
 
         let map = Self::read_all(
             &indexed_db,
@@ -764,6 +765,14 @@ impl IndexedDbStorage {
             })?;
 
         Ok(rexie)
+    }
+
+    fn get_user_agent() -> Option<String> {
+        let global = js_sys::global();
+        let navigator = js_sys::Reflect::get(&global, &"navigator".into()).ok()?;
+        js_sys::Reflect::get(&navigator, &"userAgent".into())
+            .ok()?
+            .as_string()
     }
 
     #[cfg(test)]
