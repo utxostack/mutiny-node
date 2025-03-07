@@ -2167,6 +2167,7 @@ mod tests {
             None,
             None,
             std::sync::Arc::new(MutinyLogger::default()),
+            None,
         );
 
         assert!(!NodeManager::has_node_manager(storage.clone()));
@@ -2195,6 +2196,7 @@ mod tests {
             None,
             None,
             std::sync::Arc::new(MutinyLogger::default()),
+            None,
         );
         let seed = generate_seed(12).expect("Failed to gen seed");
         let network = Network::Regtest;
@@ -2245,6 +2247,7 @@ mod tests {
             None,
             None,
             std::sync::Arc::new(MutinyLogger::default()),
+            None,
         );
         let seed = generate_seed(12).expect("Failed to gen seed");
         let network = Network::Regtest;

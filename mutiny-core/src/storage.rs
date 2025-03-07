@@ -156,6 +156,7 @@ pub struct VersionedValue {
 pub struct DeviceLock {
     pub time: u32,
     pub device: String,
+    pub device_description: Option<String>,
 }
 
 impl DeviceLock {
@@ -413,8 +414,13 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         // remove lock from VSS if is is enabled
         if self.vss_client().is_some() {
             let device = self.get_device_id()?;
+            let device_description = self.get_device_description();
             // set time to 0 to unlock
-            let lock = DeviceLock { time: 0, device };
+            let lock = DeviceLock {
+                time: 0,
+                device,
+                device_description,
+            };
             // still update the version so it is written to VSS
             let time = now().as_secs() as u32;
             self.write_data(DEVICE_LOCK_KEY.to_string(), lock, Some(time))?;
@@ -529,6 +535,8 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
     }
 
+    fn get_device_description(&self) -> Option<String>;
+
     fn get_device_lock(&self) -> Result<Option<DeviceLock>, MutinyError> {
         self.get_data(DEVICE_LOCK_KEY)
     }
@@ -548,6 +556,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         check_lnd_snapshot: bool,
     ) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
+        let device_description = self.get_device_description();
         if let Some(lock) = self.get_device_lock()? {
             if lock.is_locked(&device) {
                 log_debug!(logger, "current device is {}", device);
@@ -590,12 +599,17 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
 
         let time = now().as_secs() as u32;
-        let lock = DeviceLock { time, device };
+        let lock = DeviceLock {
+            time,
+            device,
+            device_description,
+        };
         self.write_data(DEVICE_LOCK_KEY.to_string(), lock, Some(time))
     }
 
     fn release_device_lock(&self, logger: &MutinyLogger) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
+        let device_description = self.get_device_description();
         if let Some(lock) = self.get_device_lock()? {
             if lock.is_locked(&device) {
                 log_debug!(logger, "current device is {}", device);
@@ -605,7 +619,11 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
 
         let time = 0;
-        let lock = DeviceLock { time, device };
+        let lock = DeviceLock {
+            time,
+            device,
+            device_description,
+        };
         let version = now().as_secs() as u32;
         self.write_data(DEVICE_LOCK_KEY.to_string(), lock, Some(version))
     }
@@ -660,6 +678,7 @@ pub struct MemoryStorage {
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     pub activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
     tasks: Arc<DBTasks>,
+    pub device_description: Option<String>,
 }
 
 impl MemoryStorage {
@@ -669,6 +688,7 @@ impl MemoryStorage {
         vss_client: Option<Arc<MutinyVssClient>>,
         ln_event_callback: Option<CommonLnEventCallback>,
         logger: Arc<MutinyLogger>,
+        device_description: Option<String>,
     ) -> Self {
         Self {
             database: "memdb".to_string(),
@@ -681,6 +701,7 @@ impl MemoryStorage {
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
             tasks: Arc::new(DBTasks::default()),
+            device_description,
         }
     }
 
@@ -705,7 +726,14 @@ impl MemoryStorage {
 
 impl Default for MemoryStorage {
     fn default() -> Self {
-        Self::new(None, None, None, None, Arc::new(MutinyLogger::default()))
+        Self::new(
+            None,
+            None,
+            None,
+            None,
+            Arc::new(MutinyLogger::default()),
+            None,
+        )
     }
 }
 
@@ -737,6 +765,10 @@ impl MutinyStorage for MemoryStorage {
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
         self.activity_index.clone()
+    }
+
+    fn get_device_description(&self) -> Option<String> {
+        self.device_description.clone()
     }
 
     fn write_raw<T>(&self, items: Vec<(String, T)>) -> Result<(), MutinyError>
@@ -882,6 +914,10 @@ impl MutinyStorage for () {
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
         Arc::new(RwLock::new(BTreeSet::new()))
+    }
+
+    fn get_device_description(&self) -> Option<String> {
+        None
     }
 
     fn write_raw<T: Serialize + Send>(&self, _: Vec<(String, T)>) -> Result<(), MutinyError> {
@@ -1210,6 +1246,7 @@ mod tests {
             None,
             None,
             std::sync::Arc::new(MutinyLogger::default()),
+            None,
         );
 
         let mnemonic = storage.insert_mnemonic(seed).unwrap();

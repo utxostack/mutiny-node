@@ -2194,6 +2194,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
         assert!(!NodeManager::has_node_manager(storage.clone()));
         let config = MutinyWalletConfigBuilder::new(xpriv)
@@ -2223,6 +2224,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
         assert!(!NodeManager::has_node_manager(storage.clone()));
         let config = MutinyWalletConfigBuilder::new(xpriv)
@@ -2257,6 +2259,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
 
         assert!(!NodeManager::has_node_manager(storage.clone()));
@@ -2328,6 +2331,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
         assert!(!NodeManager::has_node_manager(storage.clone()));
         let config = MutinyWalletConfigBuilder::new(xpriv)
@@ -2350,6 +2354,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
         assert!(!NodeManager::has_node_manager(storage2.clone()));
         let xpriv2 = Xpriv::new_master(network, &[0; 32]).unwrap();
@@ -2376,6 +2381,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
 
         MutinyWallet::restore_mnemonic(storage3.clone(), mnemonic.clone())
@@ -2413,6 +2419,7 @@ mod tests {
             None,
             None,
             Arc::new(MutinyLogger::default()),
+            None,
         );
         assert!(!NodeManager::has_node_manager(storage.clone()));
         let mut config_builder = MutinyWalletConfigBuilder::new(xpriv).with_network(network);
@@ -2438,7 +2445,14 @@ mod tests {
         let test_name = "test_sort_index_item";
         log!("{}", test_name);
 
-        let storage = MemoryStorage::new(None, None, None, None, Arc::new(MutinyLogger::default()));
+        let storage = MemoryStorage::new(
+            None,
+            None,
+            None,
+            None,
+            Arc::new(MutinyLogger::default()),
+            None,
+        );
         let seed = generate_seed(12).expect("Failed to gen seed");
         let network = Network::Regtest;
         let xpriv = Xpriv::new_master(network, &seed.to_seed("")).unwrap();

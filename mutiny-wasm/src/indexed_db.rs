@@ -29,6 +29,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 use utils::DBTasks;
 use wasm_bindgen::JsValue;
+use web_sys::js_sys;
 
 pub(crate) const WALLET_DATABASE_NAME: &str = "wallet";
 pub(crate) const WALLET_OBJECT_STORE_NAME: &str = "wallet_store";
@@ -56,6 +57,7 @@ pub struct IndexedDbStorage {
     delayed_keys: Arc<Mutex<HashMap<String, DelayedKeyValueItem>>>,
     activity_index: Arc<RwLock<BTreeSet<IndexItem>>>,
     tasks: Arc<DBTasks>,
+    device_description: Option<String>,
 }
 
 impl IndexedDbStorage {
@@ -85,6 +87,8 @@ impl IndexedDbStorage {
         let idx = Self::build_indexed_db_database(database.clone()).await?;
         let indexed_db = Arc::new(RwLock::new(RexieContainer(Some(idx))));
         let password = password.filter(|p| !p.is_empty());
+        let device_description = Self::get_user_agent();
+        log_debug!(logger, "Device description: {:?}", device_description);
 
         let map = Self::read_all(
             &indexed_db,
@@ -92,6 +96,7 @@ impl IndexedDbStorage {
             cipher.clone(),
             vss.as_deref(),
             &logger,
+            device_description.clone(),
         )
         .await?;
         let memory = Arc::new(RwLock::new(map));
@@ -110,6 +115,7 @@ impl IndexedDbStorage {
             delayed_keys: Arc::new(Mutex::new(HashMap::new())),
             activity_index: Arc::new(RwLock::new(BTreeSet::new())),
             tasks: Arc::new(Default::default()),
+            device_description,
         })
     }
 
@@ -322,6 +328,7 @@ impl IndexedDbStorage {
         cipher: Option<Cipher>,
         vss: Option<&MutinyVssClient>,
         logger: &MutinyLogger,
+        device_description: Option<String>,
     ) -> Result<HashMap<String, Value>, MutinyError> {
         let store = {
             let tx = indexed_db
@@ -347,7 +354,14 @@ impl IndexedDbStorage {
 
         let start = instant::Instant::now();
         // use a memory storage to handle encryption and decryption
-        let map = MemoryStorage::new(password, cipher, None, None, logger.clone().into());
+        let map = MemoryStorage::new(
+            password,
+            cipher,
+            None,
+            None,
+            logger.clone().into(),
+            device_description,
+        );
 
         let all_json = store.get_all(None, None, None, None).await.map_err(|e| {
             MutinyError::read_err(anyhow!("Failed to get all from store: {e}").into())
@@ -753,6 +767,14 @@ impl IndexedDbStorage {
         Ok(rexie)
     }
 
+    fn get_user_agent() -> Option<String> {
+        let global = js_sys::global();
+        let navigator = js_sys::Reflect::get(&global, &"navigator".into()).ok()?;
+        js_sys::Reflect::get(&navigator, &"userAgent".into())
+            .ok()?
+            .as_string()
+    }
+
     #[cfg(test)]
     pub(crate) async fn reload_from_indexed_db(&self) -> Result<(), MutinyError> {
         let map = Self::read_all(
@@ -761,6 +783,7 @@ impl IndexedDbStorage {
             self.cipher.clone(),
             self.vss.as_deref(),
             &self.logger,
+            self.device_description.clone(),
         )
         .await?;
         let mut memory = self
@@ -815,6 +838,10 @@ impl MutinyStorage for IndexedDbStorage {
 
     fn activity_index(&self) -> Arc<RwLock<BTreeSet<IndexItem>>> {
         self.activity_index.clone()
+    }
+
+    fn get_device_description(&self) -> Option<String> {
+        self.device_description.clone()
     }
 
     fn write_raw<T>(&self, items: Vec<(String, T)>) -> Result<(), MutinyError>
@@ -936,6 +963,7 @@ impl MutinyStorage for IndexedDbStorage {
             self.cipher.clone(),
             self.vss.as_deref(),
             &self.logger,
+            self.device_description.clone(),
         )
         .await?;
         let memory = Arc::new(RwLock::new(map));
