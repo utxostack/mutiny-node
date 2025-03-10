@@ -821,6 +821,50 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         self.skip_device_lock = true;
     }
 
+    async fn update_lnd_snapshot(
+        logger: Arc<MutinyLogger>,
+        storage: &S,
+        config: &MutinyWalletConfig,
+    ) {
+        if let (Some(lsp_url), Ok(Some(node_id))) = (config.lsp_url.as_ref(), storage.get_node_id())
+        {
+            match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await {
+                Ok(first_lnd_snapshot) => {
+                    log_debug!(
+                        logger,
+                        "First fetched lnd snapshot: {:?}",
+                        first_lnd_snapshot
+                    );
+                    if !VSS_MANAGER.has_in_progress() {
+                        if let Ok(second_lnd_snapshot) =
+                            fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger)
+                                .await
+                        {
+                            log_debug!(
+                                logger,
+                                "Second fetched lnd snapshot: {:?}",
+                                second_lnd_snapshot
+                            );
+                            if first_lnd_snapshot.snapshot == second_lnd_snapshot.snapshot {
+                                log_debug!(logger, "Saving lnd snapshot");
+                                if let Err(e) = storage.write_data(
+                                    LND_CHANNELS_SNAPSHOT_KEY.to_string(),
+                                    &second_lnd_snapshot,
+                                    Some(now().as_secs() as u32),
+                                ) {
+                                    log_error!(logger, "Error saving lnd snapshot: {e}");
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log_error!(logger, "Error fetching lnd channels: {e}");
+                }
+            }
+        }
+    }
+
     pub async fn build(self) -> Result<MutinyWallet<S>, MutinyError> {
         let network = self
             .network
@@ -927,64 +971,18 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                 }
 
                 let config = self.config.as_ref().expect("config is required");
-                if let (Some(lsp_url), Ok(Some(node_id))) =
-                    (config.lsp_url.as_ref(), storage_clone.get_node_id())
-                {
-                    match fetch_lnd_channels_snapshot(
-                        &Client::new(),
-                        lsp_url,
-                        &node_id,
-                        &logger_clone,
-                    )
-                    .await
-                    {
-                        Ok(first_lnd_snapshot) => {
-                            log_debug!(
-                                logger_clone,
-                                "First fetched lnd snapshot: {:?}",
-                                first_lnd_snapshot
-                            );
-                            if !VSS_MANAGER.has_in_progress() {
-                                if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
-                                    &Client::new(),
-                                    lsp_url,
-                                    &node_id,
-                                    &logger_clone,
-                                )
-                                .await
-                                {
-                                    log_debug!(
-                                        logger_clone,
-                                        "Second fetched lnd snapshot: {:?}",
-                                        second_lnd_snapshot
-                                    );
-                                    if first_lnd_snapshot.snapshot == second_lnd_snapshot.snapshot {
-                                        log_debug!(logger_clone, "Saving lnd snapshot");
-                                        if let Err(e) = storage_clone.write_data(
-                                            LND_CHANNELS_SNAPSHOT_KEY.to_string(),
-                                            &second_lnd_snapshot,
-                                            Some(now().as_secs() as u32),
-                                        ) {
-                                            log_error!(
-                                                logger_clone,
-                                                "Error saving lnd snapshot: {e}"
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log_error!(logger_clone, "Error fetching lnd channels: {e}");
-                        }
-                    }
-                }
-
                 if let Err(e) = storage_clone
-                    .set_device_lock(&logger_clone, lsp_url.clone(), config.check_lnd_snapshot)
+                    .set_device_lock(
+                        &logger_clone.clone(),
+                        lsp_url.clone(),
+                        config.check_lnd_snapshot,
+                    )
                     .await
                 {
                     log_error!(logger_clone, "Error setting device lock: {e}");
+                } else {
+                    log_debug!(logger_clone, "Device lock set");
+                    Self::update_lnd_snapshot(logger_clone.clone(), &storage_clone, config).await;
                 }
 
                 log_debug!(

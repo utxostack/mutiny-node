@@ -557,7 +557,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     ) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
         let device_description = self.get_device_description();
-        if let Some(lock) = self.get_device_lock()? {
+        if let Some(lock) = self.fetch_device_lock().await? {
             if lock.is_locked(&device) {
                 log_debug!(logger, "current device is {}", device);
                 log_debug!(logger, "locked device is {}", lock.device);
