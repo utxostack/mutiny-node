@@ -190,6 +190,8 @@ pub enum MutinyJsError {
     JwtAuthFailure,
     #[error("Failed to parse VSS value from getObject response.")]
     FailedParsingVssValue,
+    #[error("Device lock has changed when connecting.")]
+    DeviceLockChangedWhenConnecting,
     #[error("Cannot have more than one node.")]
     TooManyNodes,
     /// Unknown error.
@@ -260,6 +262,9 @@ impl From<MutinyError> for MutinyJsError {
             MutinyError::InvalidHex => MutinyJsError::InvalidHex,
             MutinyError::JwtAuthFailure => MutinyJsError::JwtAuthFailure,
             MutinyError::FailedParsingVssValue => MutinyJsError::FailedParsingVssValue,
+            MutinyError::DeviceLockChangedWhenConnecting => {
+                MutinyJsError::DeviceLockChangedWhenConnecting
+            }
         }
     }
 }

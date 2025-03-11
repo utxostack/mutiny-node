@@ -86,6 +86,12 @@ pub enum CommonLnEvent {
         timestamp: u64,
         duration_ms: u128,
     },
+    // Device lock changed when connecting
+    DeviceLockChangedWhenConnecting {
+        remote_device: String,
+        local_device: String,
+        timestamp: u64,
+    },
 }
 
 #[derive(Clone)]

@@ -1,4 +1,5 @@
 use crate::keymanager::PhantomKeysManager;
+use crate::messagehandler::CommonLnEvent;
 use crate::messagehandler::MutinyMessageHandler;
 #[cfg(target_arch = "wasm32")]
 use crate::networking::socket::{schedule_descriptor_read, MutinySocketDescriptor};
@@ -435,7 +436,15 @@ pub(crate) async fn connect_peer_if_necessary<
                 lock.device,
                 id
             );
-            panic!("Lock has changed! Aborting since state could be outdated")
+            if let Some(cb) = storage.ln_event_callback().as_ref() {
+                let event = CommonLnEvent::DeviceLockChangedWhenConnecting {
+                    remote_device: lock.device,
+                    local_device: id,
+                    timestamp: utils::now().as_secs(),
+                };
+                cb.trigger(event);
+            }
+            return Err(MutinyError::DeviceLockChangedWhenConnecting);
         }
     }
 
