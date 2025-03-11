@@ -180,6 +180,8 @@ pub enum MutinyError {
     JwtAuthFailure,
     #[error("Failed to parse VSS value from getObject response.")]
     FailedParsingVssValue,
+    #[error("Device lock changed when connecting.")]
+    DeviceLockChangedWhenConnecting,
     #[error(transparent)]
     Other(anyhow::Error),
 }
