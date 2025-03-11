@@ -561,7 +561,7 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         let lock = match self.fetch_device_lock().await {
             Ok(lock) => lock,
             Err(MutinyError::VssKeyNotFound) => {
-                log_debug!(logger, "Device lock not yet created, proceeding...");
+                log_debug!(logger, "Vss device lock not yet created, proceeding...");
                 None
             }
             Err(e) => {

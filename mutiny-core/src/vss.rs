@@ -180,7 +180,7 @@ impl MutinyVssClient {
         if response_text == "null" {
             log_debug!(
                 self.logger,
-                "Key not found, response is 'null' for key: {}",
+                "Vss key not found, response is 'null' for key: {}",
                 key
             );
             return Err(MutinyError::VssKeyNotFound);
