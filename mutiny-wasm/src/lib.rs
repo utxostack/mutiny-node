@@ -551,6 +551,15 @@ impl MutinyWallet {
         Ok(self.inner.stop().await?)
     }
 
+    /// Returns if the current device is locked.
+    #[wasm_bindgen]
+    pub async fn check_device_lock_ready(&mut self) -> Result<bool, MutinyJsError> {
+        self.inner
+            .check_device_lock_ready()
+            .await
+            .map_err(Into::into)
+    }
+
     /// Returns the mnemonic seed phrase for the wallet.
     #[wasm_bindgen]
     pub fn show_seed(&self) -> String {

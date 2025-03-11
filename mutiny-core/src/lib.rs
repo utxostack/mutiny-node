@@ -2081,6 +2081,23 @@ impl<S: MutinyStorage> MutinyWallet<S> {
     pub fn get_network(&self) -> Network {
         self.network
     }
+
+    pub async fn check_device_lock_ready(&mut self) -> Result<bool, MutinyError> {
+        if let Some(lock) = self.storage.fetch_device_lock().await? {
+            let id = self.storage.get_device_id()?;
+            let is_valid = lock.is_last_locker(&id);
+            if !is_valid {
+                log_warn!(
+                    self.logger,
+                    "Lock has changed (remote: {}, local: {})! Restarting is recommended to ensure state consistency.",
+                    lock.device,
+                    id
+                );
+            }
+            return Ok(is_valid);
+        }
+        Ok(true)
+    }
 }
 
 impl<S: MutinyStorage> InvoiceHandler for MutinyWallet<S> {
