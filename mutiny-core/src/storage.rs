@@ -557,7 +557,19 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
     ) -> Result<(), MutinyError> {
         let device = self.get_device_id()?;
         let device_description = self.get_device_description();
-        if let Some(lock) = self.fetch_device_lock().await? {
+
+        let lock = match self.fetch_device_lock().await {
+            Ok(lock) => lock,
+            Err(MutinyError::VssKeyNotFound) => {
+                log_debug!(logger, "Vss device lock not yet created, proceeding...");
+                None
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
+        if let Some(lock) = lock {
             if lock.is_locked(&device) {
                 log_debug!(logger, "current device is {}", device);
                 log_debug!(logger, "locked device is {}", lock.device);

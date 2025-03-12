@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use hex_conservative::DisplayHex;
 use lightning::util::logger::*;
-use lightning::{log_error, log_info, log_warn};
+use lightning::{log_debug, log_error, log_info, log_warn};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -170,12 +170,24 @@ impl MutinyVssClient {
 
         let body = json!({ "store_id": self.store_id, "key": key });
 
-        let result: EncryptedVssKeyValueItem = self
-            .make_request(Method::POST, url, Some(body))
-            .await?
-            .json()
-            .await
-            .map_err(|e| {
+        let response = self.make_request(Method::POST, url, Some(body)).await?;
+
+        let response_text = response.text().await.map_err(|e| {
+            log_error!(self.logger, "Error reading response body: {e}");
+            MutinyError::FailedParsingVssValue
+        })?;
+
+        if response_text == "null" {
+            log_debug!(
+                self.logger,
+                "Vss key not found, response is 'null' for key: {}",
+                key
+            );
+            return Err(MutinyError::VssKeyNotFound);
+        }
+
+        let result: EncryptedVssKeyValueItem =
+            serde_json::from_str(&response_text).map_err(|e| {
                 log_error!(self.logger, "Error parsing get objects response: {e}");
                 MutinyError::FailedParsingVssValue
             })?;

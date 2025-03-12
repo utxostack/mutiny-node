@@ -180,6 +180,8 @@ pub enum MutinyError {
     JwtAuthFailure,
     #[error("Failed to parse VSS value from getObject response.")]
     FailedParsingVssValue,
+    #[error("VSS key not found.")]
+    VssKeyNotFound,
     #[error("Device lock changed when connecting.")]
     DeviceLockChangedWhenConnecting,
     #[error(transparent)]

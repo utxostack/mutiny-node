@@ -929,6 +929,9 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                             }
                         }
                     }
+                    Err(MutinyError::VssKeyNotFound) => {
+                        log_info!(logger, "VSS key not found, retrying... {retries}");
+                    }
                     Err(MutinyError::FailedParsingVssValue) => {
                         log_info!(logger, "Failed to parse VSS value, retrying... {retries}");
                     }
