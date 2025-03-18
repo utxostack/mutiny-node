@@ -825,20 +825,36 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         logger: Arc<MutinyLogger>,
         storage: &S,
         config: &MutinyWalletConfig,
+        timeout_millis: i32,
     ) {
         if let (Some(lsp_url), Ok(Some(node_id))) = (config.lsp_url.as_ref(), storage.get_node_id())
         {
-            match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await {
+            match fetch_lnd_channels_snapshot(
+                &Client::new(),
+                lsp_url,
+                &node_id,
+                &logger,
+                timeout_millis,
+            )
+            .await
+            {
                 Ok(first_lnd_snapshot) => {
                     log_debug!(
                         logger,
                         "First fetched lnd snapshot: {:?}",
                         first_lnd_snapshot
                     );
-                    if !VSS_MANAGER.has_in_progress() {
-                        if let Ok(second_lnd_snapshot) =
-                            fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger)
-                                .await
+
+                    let pending = VSS_MANAGER.get_pending_writes();
+                    if pending.is_empty() {
+                        if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
+                            &Client::new(),
+                            lsp_url,
+                            &node_id,
+                            &logger,
+                            timeout_millis,
+                        )
+                        .await
                         {
                             log_debug!(
                                 logger,
@@ -856,6 +872,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                                 }
                             }
                         }
+                    } else {
+                        log_debug!(
+                            logger,
+                            "VSS writing in progress: {:?}, skipping lnd snapshot update",
+                            pending
+                        );
                     }
                 }
                 Err(e) => {
@@ -982,19 +1004,28 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     )
                     .await
                 {
-                    log_error!(logger_clone, "Error setting device lock: {e}");
-                } else {
-                    log_debug!(logger_clone, "Device lock set");
-                    Self::update_lnd_snapshot(logger_clone.clone(), &storage_clone, config).await;
+                    log_warn!(logger_clone, "Error setting device lock: {e}");
+                    continue;
                 }
 
-                log_debug!(
-                    logger_clone,
-                    "Vss pending writes: {:?}",
-                    VSS_MANAGER.get_pending_writes()
-                );
+                log_debug!(logger_clone, "Device lock set");
 
-                let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32;
+                let start = Instant::now();
+
+                Self::update_lnd_snapshot(
+                    logger_clone.clone(),
+                    &storage_clone,
+                    config,
+                    (DEVICE_LOCK_INTERVAL_SECS / 2 * 1000) as i32,
+                )
+                .await;
+
+                let elapsed = start.elapsed().as_millis();
+
+                log_debug!(logger_clone, "Try update LND snapshot took: {} ms", elapsed);
+
+                let mut remained_sleep_ms =
+                    (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - elapsed as i32;
                 while !stop_signal.stopping() && remained_sleep_ms > 0 {
                     let sleep_ms = 300;
                     sleep(sleep_ms).await;

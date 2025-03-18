@@ -102,6 +102,26 @@ async fn fetch(client: &Client, req: reqwest::Request) -> Result<reqwest::Respon
         .map_err(|_| MutinyError::ConnectionFailed)
 }
 
+pub async fn fetch_with_custom_timeout(
+    client: &Client,
+    req: reqwest::Request,
+    timeout_millis: i32,
+) -> Result<reqwest::Response, MutinyError> {
+    let fetch_future = fetch(client, req);
+    let timeout_future = async {
+        sleep(timeout_millis).await;
+        Err(MutinyError::ConnectionFailed)
+    };
+
+    pin_mut!(fetch_future);
+    pin_mut!(timeout_future);
+
+    match future::select(fetch_future, timeout_future).await {
+        Either::Left((ok, _)) => ok,
+        Either::Right((err, _)) => err,
+    }
+}
+
 pub fn get_random_bip32_child_index() -> u32 {
     let mut buffer = [0u8; 4];
     getrandom::getrandom(&mut buffer).unwrap();

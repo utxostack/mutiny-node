@@ -57,6 +57,7 @@ pub(crate) async fn fetch_lnd_channels(
     url: &str,
     pubkey: &str,
     logger: &MutinyLogger,
+    timeout_millis: i32,
 ) -> Result<Vec<LndChannel>, MutinyError> {
     let full_url = format!(
         "{}{}/{}",
@@ -68,7 +69,7 @@ pub(crate) async fn fetch_lnd_channels(
     let builder = http_client.get(&full_url);
     let request = builder.build().map_err(|_| MutinyError::LspGenericError)?;
 
-    let response = utils::fetch_with_timeout(http_client, request)
+    let response = utils::fetch_with_custom_timeout(http_client, request, timeout_millis)
         .await
         .map_err(|e| {
             log_error!(logger, "Error fetching channels info: {}", e);
@@ -118,7 +119,8 @@ pub(crate) async fn fetch_lnd_channels_snapshot(
     url: &str,
     pubkey: &str,
     logger: &MutinyLogger,
+    timeout_millis: i32,
 ) -> Result<LndChannelsSnapshot, MutinyError> {
-    let channels = fetch_lnd_channels(http_client, url, pubkey, logger).await?;
+    let channels = fetch_lnd_channels(http_client, url, pubkey, logger, timeout_millis).await?;
     Ok(channels.into())
 }
