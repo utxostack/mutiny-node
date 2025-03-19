@@ -51,7 +51,7 @@ use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 pub use crate::onchain::BroadcastTx1InMultiOut;
-use crate::storage::{get_invoice_by_hash, LND_CHANNELS_SNAPSHOT_KEY};
+use crate::storage::{get_invoice_by_hash, DEVICE_LOCK_KEY, LND_CHANNELS_SNAPSHOT_KEY};
 use crate::utils::{now, sleep, spawn, spawn_with_handle, StopHandle};
 use crate::vss::VSS_MANAGER;
 use crate::{authclient::MutinyAuthClient, logging::MutinyLogger};
@@ -846,7 +846,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     );
 
                     let pending = VSS_MANAGER.get_pending_writes();
-                    if pending.is_empty() {
+                    if pending.is_empty()
+                        || (pending.len() == 1
+                            && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY))
+                    {
                         if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
                             &Client::new(),
                             lsp_url,
@@ -871,9 +874,11 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                                     log_error!(logger, "Error saving lnd snapshot: {e}");
                                 }
                             }
+                        } else {
+                            log_error!(logger, "Second lnd snapshot fetch failed");
                         }
                     } else {
-                        log_debug!(
+                        log_info!(
                             logger,
                             "VSS writing in progress: {:?}, skipping lnd snapshot update",
                             pending
@@ -881,7 +886,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     }
                 }
                 Err(e) => {
-                    log_error!(logger, "Error fetching lnd channels: {e}");
+                    log_error!(logger, "First lnd snapshot fetch failed: {e}");
                 }
             }
         }
