@@ -333,3 +333,35 @@ pub fn is_hodl_invoice(invoice: &Bolt11Invoice) -> bool {
         .to_lower_hex_string();
     HODL_INVOICE_NODES.contains(&pubkey.as_str())
 }
+
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+mod tests {
+    use crate::error::MutinyError;
+    use crate::utils::fetch_with_custom_timeout;
+
+    use reqwest::Client;
+    use serde_json::json;
+    use warp::Filter;
+
+    #[tokio::test]
+    async fn test_fetch_with_custom_timeout() {
+        let route = warp::path!("test").map(|| warp::reply::json(&json!({ "message": "ok" })));
+
+        let (addr, server) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+
+        tokio::spawn(server);
+
+        let client = Client::new();
+        let url = format!("http://{}/test", addr);
+        let req = client.get(&url).build().unwrap();
+
+        let response = fetch_with_custom_timeout(&client, req.try_clone().unwrap(), 5000).await;
+        assert!(response.is_ok());
+
+        // Test with a short timeout
+        let req_slow = client.get("http://10.255.255.1").build().unwrap();
+        let response_slow = fetch_with_custom_timeout(&client, req_slow, 100).await;
+        assert!(matches!(response_slow, Err(MutinyError::ConnectionFailed)));
+    }
+}
