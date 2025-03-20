@@ -1029,10 +1029,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
 
                 log_debug!(logger_clone, "Try update LND snapshot took: {} ms", elapsed);
 
+                let sleep_ms = 300;
                 let mut remained_sleep_ms =
-                    (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - elapsed as i32;
+                    (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - elapsed as i32 - sleep_ms;
                 while !stop_signal.stopping() && remained_sleep_ms > 0 {
-                    let sleep_ms = 300;
                     sleep(sleep_ms).await;
                     remained_sleep_ms -= sleep_ms;
                 }
