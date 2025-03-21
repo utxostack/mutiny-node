@@ -51,6 +51,7 @@ use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 pub use crate::onchain::BroadcastTx1InMultiOut;
+use crate::peermanager::CONNECTED_PEER_MANAGER;
 use crate::storage::{get_invoice_by_hash, DEVICE_LOCK_KEY, LND_CHANNELS_SNAPSHOT_KEY};
 use crate::utils::{now, sleep, spawn, spawn_with_handle, StopHandle};
 use crate::vss::VSS_MANAGER;
@@ -847,9 +848,11 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             };
 
         let pending = VSS_MANAGER.get_pending_writes();
-        if pending.is_empty()
-            || (pending.len() == 1 && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY))
-        {
+        let only_device_lock_vss_pending =
+            pending.len() == 1 && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY);
+        let can_update_snapshot = (pending.is_empty() || only_device_lock_vss_pending)
+            && CONNECTED_PEER_MANAGER.is_any_connected();
+        if can_update_snapshot {
             let second_lnd_snapshot =
                 match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await
                 {
