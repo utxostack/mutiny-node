@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "mutiny-wasm"
-version = "1.14.4"
+version = "1.14.5"
 dependencies = [
  "anyhow",
  "async-trait",
