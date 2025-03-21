@@ -1009,7 +1009,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     )
                     .await
                 {
-                    log_warn!(logger_clone, "Error setting device lock: {e}");
+                    log_warn!(logger_clone, "Error setting device lock: {e} ");
+                    if MutinyError::AlreadyRunning == e {
+                        sleep((DEVICE_LOCK_INTERVAL_SECS * 1000) as i32).await;
+                    }
                     continue;
                 }
 
