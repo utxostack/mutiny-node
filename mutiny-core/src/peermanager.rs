@@ -24,8 +24,10 @@ use lightning::routing::gossip::NodeId;
 use lightning::util::logger::Logger;
 use lightning::{ln::msgs::SocketAddress, log_warn};
 use lightning::{log_debug, log_error};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use utils::Mutex;
 
 #[cfg(target_arch = "wasm32")]
 use crate::networking::ws_socket::WsTcpSocketDescriptor;
@@ -35,6 +37,9 @@ use lightning::ln::peer_handler::SocketDescriptor as LdkSocketDescriptor;
 
 #[cfg(target_arch = "wasm32")]
 use crate::networking::proxy::WsProxy;
+
+pub static CONNECTED_PEER_MANAGER: once_cell::sync::Lazy<ConnectedPeerManager> =
+    once_cell::sync::Lazy::new(ConnectedPeerManager::default);
 
 #[allow(dead_code)]
 pub trait PeerManager: Send + Sync + 'static {
@@ -580,4 +585,89 @@ fn try_parse_addr_string(addr: &str) -> (Option<std::net::SocketAddr>, Option<So
         },
     });
     (socket_addr, net_addr)
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectedPeerInfo {
+    pub inbound: bool,
+    pub remote_address: Option<String>,
+    pub connected_at_timestamp: u64,
+}
+
+pub struct ConnectedPeerManager {
+    peers: Arc<Mutex<HashMap<PublicKey, ConnectedPeerInfo>>>,
+    logger: Mutex<Option<Arc<MutinyLogger>>>,
+}
+
+impl Default for ConnectedPeerManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConnectedPeerManager {
+    pub fn new() -> Self {
+        Self {
+            peers: Arc::new(Mutex::new(HashMap::new())),
+            logger: Mutex::new(None),
+        }
+    }
+
+    pub fn set_logger(&self, logger: Arc<MutinyLogger>) {
+        let mut lock = self.logger.lock().unwrap();
+        *lock = Some(logger);
+    }
+
+    pub fn add_peer(
+        &self,
+        their_node_id: PublicKey,
+        inbound: bool,
+        remote_address: Option<String>,
+    ) {
+        let timestamp = utils::now().as_secs();
+
+        let info = ConnectedPeerInfo {
+            inbound,
+            remote_address,
+            connected_at_timestamp: timestamp,
+        };
+
+        let mut peers = self.peers.lock().unwrap();
+        let inserted = peers.insert(their_node_id, info).is_none();
+        let logger = {
+            let guard = self.logger.lock().expect(
+                "
+                Failed to lock logger",
+            );
+            guard.clone()
+        };
+        if inserted {
+            if let Some(logger) = logger {
+                log_debug!(logger, "Connected to peer: {}", their_node_id);
+            }
+        }
+    }
+
+    pub fn remove_peer(&self, their_node_id: &PublicKey) {
+        let mut peers = self.peers.lock().unwrap();
+        let removed = peers.remove(their_node_id).is_some();
+
+        let logger = {
+            let guard = self.logger.lock().expect(
+                "
+                Failed to lock logger",
+            );
+            guard.clone()
+        };
+        if removed {
+            if let Some(logger) = logger {
+                log_debug!(logger, "Disconnected from peer: {}", their_node_id);
+            }
+        }
+    }
+
+    pub fn is_any_connected(&self) -> bool {
+        let lock = self.peers.lock().unwrap();
+        !lock.is_empty()
+    }
 }

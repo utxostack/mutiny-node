@@ -28,7 +28,7 @@ mod networking;
 mod node;
 pub mod nodemanager;
 mod onchain;
-mod peermanager;
+pub mod peermanager;
 pub mod scorer;
 pub mod storage;
 mod subscription;
