@@ -51,7 +51,7 @@ use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
 pub use crate::onchain::BroadcastTx1InMultiOut;
-use crate::storage::{get_invoice_by_hash, LND_CHANNELS_SNAPSHOT_KEY};
+use crate::storage::{get_invoice_by_hash, DEVICE_LOCK_KEY, LND_CHANNELS_SNAPSHOT_KEY};
 use crate::utils::{now, sleep, spawn, spawn_with_handle, StopHandle};
 use crate::vss::VSS_MANAGER;
 use crate::{authclient::MutinyAuthClient, logging::MutinyLogger};
@@ -93,10 +93,12 @@ use lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -826,42 +828,56 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         storage: &S,
         config: &MutinyWalletConfig,
     ) {
-        if let (Some(lsp_url), Ok(Some(node_id))) = (config.lsp_url.as_ref(), storage.get_node_id())
-        {
+        let (Some(lsp_url), Ok(Some(node_id))) = (config.lsp_url.as_ref(), storage.get_node_id())
+        else {
+            log_warn!(logger, "LSP URL or node ID not found");
+            return;
+        };
+
+        let first_lnd_snapshot =
             match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await {
-                Ok(first_lnd_snapshot) => {
-                    log_debug!(
-                        logger,
-                        "First fetched lnd snapshot: {:?}",
-                        first_lnd_snapshot
-                    );
-                    if !VSS_MANAGER.has_in_progress() {
-                        if let Ok(second_lnd_snapshot) =
-                            fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger)
-                                .await
-                        {
-                            log_debug!(
-                                logger,
-                                "Second fetched lnd snapshot: {:?}",
-                                second_lnd_snapshot
-                            );
-                            if first_lnd_snapshot.snapshot == second_lnd_snapshot.snapshot {
-                                log_debug!(logger, "Saving lnd snapshot");
-                                if let Err(e) = storage.write_data(
-                                    LND_CHANNELS_SNAPSHOT_KEY.to_string(),
-                                    &second_lnd_snapshot,
-                                    Some(now().as_secs() as u32),
-                                ) {
-                                    log_error!(logger, "Error saving lnd snapshot: {e}");
-                                }
-                            }
-                        }
-                    }
+                Ok(snapshot) => {
+                    log_debug!(logger, "First fetched lnd snapshot: {:?}", snapshot);
+                    snapshot
                 }
                 Err(e) => {
-                    log_error!(logger, "Error fetching lnd channels: {e}");
+                    log_error!(logger, "First lnd snapshot fetch failed: {e}");
+                    return;
+                }
+            };
+
+        let pending = VSS_MANAGER.get_pending_writes();
+        if pending.is_empty()
+            || (pending.len() == 1 && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY))
+        {
+            let second_lnd_snapshot =
+                match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await
+                {
+                    Ok(snapshot) => {
+                        log_debug!(logger, "Second fetched lnd snapshot: {:?}", snapshot);
+                        snapshot
+                    }
+                    Err(e) => {
+                        log_error!(logger, "Second lnd snapshot fetch failed: {e}");
+                        return;
+                    }
+                };
+            if first_lnd_snapshot.snapshot == second_lnd_snapshot.snapshot {
+                log_debug!(logger, "Saving lnd snapshot");
+                if let Err(e) = storage.write_data(
+                    LND_CHANNELS_SNAPSHOT_KEY.to_string(),
+                    &second_lnd_snapshot,
+                    Some(now().as_secs() as u32),
+                ) {
+                    log_error!(logger, "Error saving lnd snapshot: {e}");
                 }
             }
+        } else {
+            log_info!(
+                logger,
+                "VSS writing in progress: {:?}, skipping lnd snapshot update",
+                pending
+            );
         }
     }
 
@@ -960,6 +976,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         let storage_clone = self.storage.clone();
         let logger_clone = logger.clone();
         let device_lock_stop_handle = spawn_with_handle(|stop_signal| async move {
+            let is_updating_lnd_snapshot = Arc::new(AtomicBool::new(false));
             loop {
                 if stop_signal.stopping() {
                     log_debug!(logger_clone, "stopping claim device lock");
@@ -982,21 +999,38 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     )
                     .await
                 {
-                    log_error!(logger_clone, "Error setting device lock: {e}");
-                } else {
-                    log_debug!(logger_clone, "Device lock set");
-                    Self::update_lnd_snapshot(logger_clone.clone(), &storage_clone, config).await;
+                    log_warn!(logger_clone, "Error setting device lock: {e} ");
+                    if MutinyError::AlreadyRunning == e {
+                        sleep((DEVICE_LOCK_INTERVAL_SECS * 1000) as i32).await;
+                    }
+                    continue;
                 }
 
                 log_debug!(
                     logger_clone,
-                    "Vss pending writes: {:?}",
-                    VSS_MANAGER.get_pending_writes()
+                    "Device lock set. VSS write is async and may still be in progress."
                 );
 
-                let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32;
+                if !is_updating_lnd_snapshot.swap(true, Ordering::SeqCst) {
+                    let logger_for_task = logger_clone.clone();
+                    let storage_for_task = storage_clone.clone();
+                    let config_for_task = config.clone();
+                    let snapshot_flag = is_updating_lnd_snapshot.clone();
+
+                    spawn(async move {
+                        Self::update_lnd_snapshot(
+                            logger_for_task.clone(),
+                            &storage_for_task,
+                            &config_for_task,
+                        )
+                        .await;
+                        snapshot_flag.store(false, Ordering::SeqCst);
+                    });
+                }
+
+                let sleep_ms = 300;
+                let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - sleep_ms;
                 while !stop_signal.stopping() && remained_sleep_ms > 0 {
-                    let sleep_ms = 300;
                     sleep(sleep_ms).await;
                     remained_sleep_ms -= sleep_ms;
                 }

@@ -249,6 +249,7 @@ impl VssManager {
     }
 
     pub fn get_pending_writes(&self) -> Vec<(String, VssPendingWrite)> {
+        self.check_timeout();
         let writes = self.pending_writes.lock().expect(
             "
             Failed to lock pending writes",
