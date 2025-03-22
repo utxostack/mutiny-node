@@ -32,6 +32,7 @@ use mutiny_core::authmanager::AuthManager;
 use mutiny_core::encrypt::decrypt_with_password;
 use mutiny_core::error::MutinyError;
 use mutiny_core::messagehandler::{CommonLnEvent, CommonLnEventCallback};
+use mutiny_core::peermanager::CONNECTED_PEER_MANAGER;
 use mutiny_core::storage::{DeviceLock, MutinyStorage, DEVICE_LOCK_KEY};
 use mutiny_core::utils::sleep;
 use mutiny_core::vss::{MutinyVssClient, VSS_MANAGER};
@@ -225,6 +226,7 @@ impl MutinyWallet {
         log_info!(logger, "Node version {version}");
 
         VSS_MANAGER.set_logger(logger.clone());
+        CONNECTED_PEER_MANAGER.set_logger(logger.clone());
 
         let cipher = password
             .as_ref()

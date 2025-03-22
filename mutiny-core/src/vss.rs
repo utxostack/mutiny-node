@@ -250,10 +250,10 @@ impl VssManager {
 
     pub fn get_pending_writes(&self) -> Vec<(String, VssPendingWrite)> {
         self.check_timeout();
-        let writes = self.pending_writes.lock().expect(
-            "
-            Failed to lock pending writes",
-        );
+        let writes = self
+            .pending_writes
+            .lock()
+            .expect("Failed to lock pending writes");
         writes.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
@@ -271,33 +271,30 @@ impl VssManager {
     }
 
     pub fn on_complete_write(&self, key: String) {
-        let mut pending_writes = self.pending_writes.lock().expect(
-            "
-            Failed to lock pending writes",
-        );
+        let mut pending_writes = self
+            .pending_writes
+            .lock()
+            .expect("Failed to lock pending writes");
         pending_writes.remove(&key);
     }
 
     pub fn has_in_progress(&self) -> bool {
         self.check_timeout();
-        let writes = self.pending_writes.lock().expect(
-            "
-            Failed to lock pending writes",
-        );
+        let writes = self
+            .pending_writes
+            .lock()
+            .expect("Failed to lock pending writes");
         !writes.is_empty()
     }
 
     fn check_timeout(&self) {
         let current_time = utils::now().as_secs();
-        let mut writes = self.pending_writes.lock().expect(
-            "
-            Failed to lock pending writes",
-        );
+        let mut writes = self
+            .pending_writes
+            .lock()
+            .expect("Failed to lock pending writes");
         let logger = {
-            let guard = self.logger.lock().expect(
-                "
-                Failed to lock logger",
-            );
+            let guard = self.logger.lock().expect("Failed to lock logger");
             guard.clone()
         };
         writes.retain(|key, write| {
