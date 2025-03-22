@@ -635,10 +635,7 @@ impl ConnectedPeerManager {
         let mut peers = self.peers.lock().unwrap();
         let inserted = peers.insert(their_node_id, info).is_none();
         let logger = {
-            let guard = self.logger.lock().expect(
-                "
-                Failed to lock logger",
-            );
+            let guard = self.logger.lock().expect("Failed to lock logger");
             guard.clone()
         };
         if inserted {
@@ -653,10 +650,7 @@ impl ConnectedPeerManager {
         let removed = peers.remove(their_node_id).is_some();
 
         let logger = {
-            let guard = self.logger.lock().expect(
-                "
-                Failed to lock logger",
-            );
+            let guard = self.logger.lock().expect("Failed to lock logger");
             guard.clone()
         };
         if removed {
