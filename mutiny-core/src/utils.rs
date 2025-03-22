@@ -102,26 +102,6 @@ async fn fetch(client: &Client, req: reqwest::Request) -> Result<reqwest::Respon
         .map_err(|_| MutinyError::ConnectionFailed)
 }
 
-pub async fn fetch_with_custom_timeout(
-    client: &Client,
-    req: reqwest::Request,
-    timeout_millis: i32,
-) -> Result<reqwest::Response, MutinyError> {
-    let fetch_future = fetch(client, req);
-    let timeout_future = async {
-        sleep(timeout_millis).await;
-        Err(MutinyError::ConnectionFailed)
-    };
-
-    pin_mut!(fetch_future);
-    pin_mut!(timeout_future);
-
-    match future::select(fetch_future, timeout_future).await {
-        Either::Left((ok, _)) => ok,
-        Either::Right((err, _)) => err,
-    }
-}
-
 pub fn get_random_bip32_child_index() -> u32 {
     let mut buffer = [0u8; 4];
     getrandom::getrandom(&mut buffer).unwrap();
@@ -332,36 +312,4 @@ pub fn is_hodl_invoice(invoice: &Bolt11Invoice) -> bool {
         .serialize()
         .to_lower_hex_string();
     HODL_INVOICE_NODES.contains(&pubkey.as_str())
-}
-
-#[cfg(test)]
-#[cfg(not(target_arch = "wasm32"))]
-mod tests {
-    use crate::error::MutinyError;
-    use crate::utils::fetch_with_custom_timeout;
-
-    use reqwest::Client;
-    use serde_json::json;
-    use warp::Filter;
-
-    #[tokio::test]
-    async fn test_fetch_with_custom_timeout() {
-        let route = warp::path!("test").map(|| warp::reply::json(&json!({ "message": "ok" })));
-
-        let (addr, server) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
-
-        tokio::spawn(server);
-
-        let client = Client::new();
-        let url = format!("http://{}/test", addr);
-        let req = client.get(&url).build().unwrap();
-
-        let response = fetch_with_custom_timeout(&client, req.try_clone().unwrap(), 5000).await;
-        assert!(response.is_ok());
-
-        // Test with a short timeout
-        let req_slow = client.get("http://10.255.255.1").build().unwrap();
-        let response_slow = fetch_with_custom_timeout(&client, req_slow, 100).await;
-        assert!(matches!(response_slow, Err(MutinyError::ConnectionFailed)));
-    }
 }

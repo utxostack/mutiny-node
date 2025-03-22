@@ -827,19 +827,10 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         logger: Arc<MutinyLogger>,
         storage: &S,
         config: &MutinyWalletConfig,
-        timeout_millis: i32,
     ) {
         if let (Some(lsp_url), Ok(Some(node_id))) = (config.lsp_url.as_ref(), storage.get_node_id())
         {
-            match fetch_lnd_channels_snapshot(
-                &Client::new(),
-                lsp_url,
-                &node_id,
-                &logger,
-                timeout_millis,
-            )
-            .await
-            {
+            match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await {
                 Ok(first_lnd_snapshot) => {
                     log_debug!(
                         logger,
@@ -852,14 +843,9 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                         || (pending.len() == 1
                             && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY))
                     {
-                        if let Ok(second_lnd_snapshot) = fetch_lnd_channels_snapshot(
-                            &Client::new(),
-                            lsp_url,
-                            &node_id,
-                            &logger,
-                            timeout_millis,
-                        )
-                        .await
+                        if let Ok(second_lnd_snapshot) =
+                            fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger)
+                                .await
                         {
                             log_debug!(
                                 logger,
@@ -1039,7 +1025,6 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                             logger_for_task.clone(),
                             &storage_for_task,
                             &config_for_task,
-                            (DEVICE_LOCK_INTERVAL_SECS / 2 * 1000) as i32,
                         )
                         .await;
                         snapshot_flag.store(false, Ordering::SeqCst);

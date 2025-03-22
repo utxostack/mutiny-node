@@ -3,7 +3,7 @@ use crate::logging::MutinyLogger;
 use crate::lsp::lndchannel::{fetch_lnd_channels_snapshot, LndChannelsSnapshot};
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
 use crate::nodemanager::{ChannelClosure, NodeStorage};
-use crate::utils::{now, spawn, DBTasks, Task, FETCH_TIMEOUT};
+use crate::utils::{now, spawn, DBTasks, Task};
 use crate::vss::{MutinyVssClient, VssKeyValueItem};
 use crate::{
     encrypt::{decrypt_with_password, encrypt, encryption_key_from_pass, Cipher},
@@ -583,7 +583,6 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
                         &lsp_url.unwrap(),
                         &node_id,
                         logger,
-                        FETCH_TIMEOUT,
                     )
                     .await
                     {
