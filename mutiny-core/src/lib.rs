@@ -93,10 +93,12 @@ use lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -987,11 +989,16 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         let storage_clone = self.storage.clone();
         let logger_clone = logger.clone();
         let device_lock_stop_handle = spawn_with_handle(|stop_signal| async move {
+            let is_updating_lnd_snapshot = Arc::new(AtomicBool::new(false));
             loop {
                 if stop_signal.stopping() {
                     log_debug!(logger_clone, "stopping claim device lock");
                     while VSS_MANAGER.has_in_progress() {
                         log_debug!(logger_clone, "waiting for VSS to finish");
+                        sleep(300).await;
+                    }
+                    while is_updating_lnd_snapshot.load(Ordering::SeqCst) {
+                        log_debug!(logger_clone, "waiting for snapshot to finish");
                         sleep(300).await;
                     }
                     if let Err(e) = storage_clone.release_device_lock(&logger_clone) {
@@ -1016,25 +1023,31 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
                     continue;
                 }
 
-                log_debug!(logger_clone, "Device lock set");
+                log_debug!(
+                    logger_clone,
+                    "Device lock set. VSS write is async and may still be in progress."
+                );
 
-                let start = Instant::now();
+                if !is_updating_lnd_snapshot.swap(true, Ordering::SeqCst) {
+                    let logger_for_task = logger_clone.clone();
+                    let storage_for_task = storage_clone.clone();
+                    let config_for_task = config.clone();
+                    let snapshot_flag = is_updating_lnd_snapshot.clone();
 
-                Self::update_lnd_snapshot(
-                    logger_clone.clone(),
-                    &storage_clone,
-                    config,
-                    (DEVICE_LOCK_INTERVAL_SECS / 2 * 1000) as i32,
-                )
-                .await;
-
-                let elapsed = start.elapsed().as_millis();
-
-                log_debug!(logger_clone, "Try update LND snapshot took: {} ms", elapsed);
+                    spawn(async move {
+                        Self::update_lnd_snapshot(
+                            logger_for_task.clone(),
+                            &storage_for_task,
+                            &config_for_task,
+                            (DEVICE_LOCK_INTERVAL_SECS / 2 * 1000) as i32,
+                        )
+                        .await;
+                        snapshot_flag.store(false, Ordering::SeqCst);
+                    });
+                }
 
                 let sleep_ms = 300;
-                let mut remained_sleep_ms =
-                    (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - elapsed as i32 - sleep_ms;
+                let mut remained_sleep_ms = (DEVICE_LOCK_INTERVAL_SECS * 1000) as i32 - sleep_ms;
                 while !stop_signal.stopping() && remained_sleep_ms > 0 {
                     sleep(sleep_ms).await;
                     remained_sleep_ms -= sleep_ms;
