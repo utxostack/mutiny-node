@@ -10,6 +10,7 @@ use lightning::util::ser::{Writeable, Writer};
 use serde::{Deserialize, Serialize};
 
 use crate::node::LiquidityManager;
+use crate::peermanager::CONNECTED_PEER_MANAGER;
 use crate::storage::MutinyStorage;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -175,6 +176,14 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
         msg: &lightning::ln::msgs::Init,
         inbound: bool,
     ) -> Result<(), ()> {
+        CONNECTED_PEER_MANAGER.add_peer(
+            *their_node_id,
+            inbound,
+            msg.remote_network_address
+                .as_ref()
+                .map(|addr| format!("{}", addr)),
+        );
+
         if let Some(cb) = self.ln_event_callback.clone() {
             let event = CommonLnEvent::OnConnect {
                 their_node_id: their_node_id.to_string(),
@@ -190,6 +199,8 @@ impl<S: MutinyStorage> CustomMessageHandler for MutinyMessageHandler<S> {
     }
 
     fn peer_disconnected(&self, their_node_id: &PublicKey) {
+        CONNECTED_PEER_MANAGER.remove_peer(their_node_id);
+
         if let Some(cb) = self.ln_event_callback.clone() {
             let event = CommonLnEvent::OnDisconnect {
                 their_node_id: their_node_id.to_string(),
