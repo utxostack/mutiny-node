@@ -46,7 +46,9 @@ pub use crate::ldkstorage::{
     ACTIVE_NODE_ID_KEY, CHANNEL_CLOSURE_BUMP_PREFIX, CHANNEL_CLOSURE_PREFIX, CHANNEL_MANAGER_KEY,
     MONITORS_PREFIX_KEY,
 };
-use crate::lsp::lndchannel::fetch_lnd_channels_snapshot;
+use crate::lsp::lndchannel::{
+    fetch_lnd_channels, fetch_lnd_channels_snapshot, LndChannelsSnapshot,
+};
 use crate::messagehandler::CommonLnEventCallback;
 use crate::nodemanager::NodeManager;
 use crate::nodemanager::{ChannelClosure, MutinyBip21RawMaterials};
@@ -835,11 +837,12 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
             return;
         };
 
-        let first_lnd_snapshot =
-            match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await {
-                Ok(snapshot) => {
-                    log_debug!(logger, "First fetched lnd snapshot: {:?}", snapshot);
-                    snapshot
+        let (lnd_channels, first_lnd_snapshot) =
+            match fetch_lnd_channels(&Client::new(), lsp_url, &node_id, &logger).await {
+                Ok(lnd_channels) => {
+                    let lnd_snapshot: LndChannelsSnapshot = lnd_channels.clone().into();
+                    log_debug!(logger, "First fetched lnd snapshot: {:?}", lnd_snapshot);
+                    (lnd_channels, lnd_snapshot)
                 }
                 Err(e) => {
                     log_error!(logger, "First lnd snapshot fetch failed: {e}");
@@ -851,7 +854,7 @@ impl<S: MutinyStorage> MutinyWalletBuilder<S> {
         let only_device_lock_vss_pending =
             pending.len() == 1 && pending.iter().any(|(key, _)| key == DEVICE_LOCK_KEY);
         let can_update_snapshot = (pending.is_empty() || only_device_lock_vss_pending)
-            && CONNECTED_PEER_MANAGER.is_any_connected();
+            && CONNECTED_PEER_MANAGER.validate_peer_connections(&lnd_channels);
         if can_update_snapshot {
             let second_lnd_snapshot =
                 match fetch_lnd_channels_snapshot(&Client::new(), lsp_url, &node_id, &logger).await

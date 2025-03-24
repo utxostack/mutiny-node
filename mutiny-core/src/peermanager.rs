@@ -1,4 +1,5 @@
 use crate::keymanager::PhantomKeysManager;
+use crate::lsp::lndchannel::LndChannel;
 use crate::messagehandler::CommonLnEvent;
 use crate::messagehandler::MutinyMessageHandler;
 #[cfg(target_arch = "wasm32")]
@@ -24,7 +25,8 @@ use lightning::routing::gossip::NodeId;
 use lightning::util::logger::Logger;
 use lightning::{ln::msgs::SocketAddress, log_warn};
 use lightning::{log_debug, log_error};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use utils::Mutex;
@@ -660,8 +662,54 @@ impl ConnectedPeerManager {
         }
     }
 
-    pub fn is_any_connected(&self) -> bool {
-        let lock = self.peers.lock().unwrap();
-        !lock.is_empty()
+    pub fn validate_peer_connections(&self, channels: &[LndChannel]) -> bool {
+        let (channel_pks, peer_pks) = {
+            let chan_set = channels
+                .iter()
+                .fold(
+                    (HashSet::new(), true),
+                    |(mut s, valid), c| match PublicKey::from_str(&c.local_pubkey) {
+                        Ok(k) => {
+                            s.insert(k);
+                            (s, valid)
+                        }
+                        Err(e) => {
+                            if let Some(l) = &*self.logger.lock().unwrap() {
+                                log_warn!(l, "Invalid local_pubkey in {}: {}", c.chan_id, e);
+                            }
+                            (s, false)
+                        }
+                    },
+                );
+            if !chan_set.1 {
+                return false;
+            }
+
+            let peers = self.peers.lock().unwrap();
+            (chan_set.0, peers.keys().cloned().collect::<HashSet<_>>())
+        };
+
+        let is_match = channel_pks == peer_pks;
+        if !is_match {
+            if let Some(l) = &*self.logger.lock().unwrap() {
+                peer_pks
+                    .difference(&channel_pks)
+                    .for_each(|pk| log_warn!(l, "Redundant peer: {}", pk));
+                channel_pks.difference(&peer_pks).for_each(|pk| {
+                    log_warn!(
+                        l,
+                        "Missing peer: {} in channels {:?}",
+                        pk,
+                        channels
+                            .iter()
+                            .filter(|c| c.local_pubkey == pk.to_string())
+                            .map(|c| &c.chan_id)
+                            .collect::<Vec<_>>()
+                    )
+                });
+            }
+        }
+
+        is_match
     }
 }
