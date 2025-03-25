@@ -23,6 +23,7 @@ pub struct ChannelConstraints {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LndChannel {
     pub active: bool,
+    pub local_pubkey: String,
     pub remote_pubkey: String,
     pub channel_point: String,
     pub chan_id: String,

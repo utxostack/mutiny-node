@@ -1,4 +1,5 @@
 use crate::keymanager::PhantomKeysManager;
+use crate::lsp::lndchannel::LndChannel;
 use crate::messagehandler::CommonLnEvent;
 use crate::messagehandler::MutinyMessageHandler;
 #[cfg(target_arch = "wasm32")]
@@ -24,7 +25,8 @@ use lightning::routing::gossip::NodeId;
 use lightning::util::logger::Logger;
 use lightning::{ln::msgs::SocketAddress, log_warn};
 use lightning::{log_debug, log_error};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use utils::Mutex;
@@ -660,8 +662,43 @@ impl ConnectedPeerManager {
         }
     }
 
-    pub fn is_any_connected(&self) -> bool {
-        let lock = self.peers.lock().unwrap();
-        !lock.is_empty()
+    pub fn validate_peer_connections(&self, channels: &[LndChannel]) -> bool {
+        let (peers_of_active_channels, valid) =
+            channels
+                .iter()
+                .fold(
+                    (HashSet::new(), true),
+                    |(mut s, valid), c| match PublicKey::from_str(&c.local_pubkey) {
+                        Ok(k) => {
+                            s.insert(k);
+                            (s, valid)
+                        }
+                        Err(e) => {
+                            if let Some(l) = &*self.logger.lock().unwrap() {
+                                log_warn!(l, "Invalid local_pubkey in {}: {}", c.chan_id, e);
+                            }
+                            (s, false)
+                        }
+                    },
+                );
+        if !valid {
+            return false;
+        }
+
+        let peers_in_manager = {
+            let peers = self.peers.lock().unwrap();
+            peers.keys().cloned().collect::<HashSet<_>>()
+        };
+
+        let is_match = peers_of_active_channels.is_subset(&peers_in_manager);
+        if !is_match {
+            if let Some(l) = &*self.logger.lock().unwrap() {
+                peers_of_active_channels
+                    .difference(&peers_in_manager)
+                    .for_each(|pk| log_warn!(l, "Missing peer: {}", pk));
+            }
+        }
+
+        is_match
     }
 }
