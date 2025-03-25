@@ -663,7 +663,7 @@ impl ConnectedPeerManager {
     }
 
     pub fn validate_peer_connections(&self, channels: &[LndChannel]) -> bool {
-        let (peers_from_lnd, valid) =
+        let (peers_of_active_channels, valid) =
             channels
                 .iter()
                 .fold(
@@ -690,10 +690,10 @@ impl ConnectedPeerManager {
             peers.keys().cloned().collect::<HashSet<_>>()
         };
 
-        let is_match = peers_from_lnd.is_subset(&peers_in_manager);
+        let is_match = peers_of_active_channels.is_subset(&peers_in_manager);
         if !is_match {
             if let Some(l) = &*self.logger.lock().unwrap() {
-                peers_from_lnd
+                peers_of_active_channels
                     .difference(&peers_in_manager)
                     .for_each(|pk| log_warn!(l, "Missing peer: {}", pk));
             }
