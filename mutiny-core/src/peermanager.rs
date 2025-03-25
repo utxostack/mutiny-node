@@ -663,8 +663,8 @@ impl ConnectedPeerManager {
     }
 
     pub fn validate_peer_connections(&self, channels: &[LndChannel]) -> bool {
-        let (channel_pks, peer_pks) = {
-            let chan_set = channels
+        let (peers_from_lnd, valid) =
+            channels
                 .iter()
                 .fold(
                     (HashSet::new(), true),
@@ -681,32 +681,21 @@ impl ConnectedPeerManager {
                         }
                     },
                 );
-            if !chan_set.1 {
-                return false;
-            }
+        if !valid {
+            return false;
+        }
 
+        let peers_in_manager = {
             let peers = self.peers.lock().unwrap();
-            (chan_set.0, peers.keys().cloned().collect::<HashSet<_>>())
+            peers.keys().cloned().collect::<HashSet<_>>()
         };
 
-        let is_match = channel_pks == peer_pks;
+        let is_match = peers_from_lnd.is_subset(&peers_in_manager);
         if !is_match {
             if let Some(l) = &*self.logger.lock().unwrap() {
-                peer_pks
-                    .difference(&channel_pks)
-                    .for_each(|pk| log_warn!(l, "Redundant peer: {}", pk));
-                channel_pks.difference(&peer_pks).for_each(|pk| {
-                    log_warn!(
-                        l,
-                        "Missing peer: {} in channels {:?}",
-                        pk,
-                        channels
-                            .iter()
-                            .filter(|c| c.local_pubkey == pk.to_string())
-                            .map(|c| &c.chan_id)
-                            .collect::<Vec<_>>()
-                    )
-                });
+                peers_from_lnd
+                    .difference(&peers_in_manager)
+                    .for_each(|pk| log_warn!(l, "Missing peer: {}", pk));
             }
         }
 
