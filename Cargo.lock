@@ -1237,7 +1237,7 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 [[package]]
 name = "lightning"
 version = "0.0.125"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1250,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "lightning-background-processor"
 version = "0.0.125"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1261,7 +1261,7 @@ dependencies = [
 [[package]]
 name = "lightning-common"
 version = "0.1.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "web-time",
 ]
@@ -1269,7 +1269,7 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.32.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1307,7 +1307,7 @@ dependencies = [
 [[package]]
 name = "lightning-rapid-gossip-sync"
 version = "0.0.125"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1317,7 +1317,7 @@ dependencies = [
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.0.125"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bdk-macros",
  "bitcoin",
@@ -1330,7 +1330,7 @@ dependencies = [
 [[package]]
 name = "lightning-types"
 version = "0.1.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=wasm-adapt#826daa7924f4ecb2e861d26f3484c907b5751076"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
