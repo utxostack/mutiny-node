@@ -1236,8 +1236,8 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
 name = "lightning"
-version = "0.0.124"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+version = "0.0.125"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1249,8 +1249,8 @@ dependencies = [
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.124"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+version = "0.0.125"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1261,7 +1261,7 @@ dependencies = [
 [[package]]
 name = "lightning-common"
 version = "0.1.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "web-time",
 ]
@@ -1269,7 +1269,7 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.32.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1280,9 +1280,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-liquidity"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49afbc99fa165be9e106516e475d518620015ce5f264ae6e349948b29da1f868"
+checksum = "175cff5d30b8d3f94ae9772b59f9ca576b1927a6ab60dd773e8c4e0593cd4e95"
 dependencies = [
  "bitcoin",
  "chrono",
@@ -1295,9 +1295,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.124"
+version = "0.0.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b83c367f1f524754b0fd38ed590bcc7dbe4d1d599607c664b243239bc917da05"
+checksum = "af2847a19f892f32b9ab5075af25c70370b4cc5842b4f5b53c57092e52a49498"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1306,8 +1306,8 @@ dependencies = [
 
 [[package]]
 name = "lightning-rapid-gossip-sync"
-version = "0.0.124"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+version = "0.0.125"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -1316,8 +1316,8 @@ dependencies = [
 
 [[package]]
 name = "lightning-transaction-sync"
-version = "0.0.124"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+version = "0.0.125"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bdk-macros",
  "bitcoin",
@@ -1330,7 +1330,7 @@ dependencies = [
 [[package]]
 name = "lightning-types"
 version = "0.1.0"
-source = "git+https://github.com/utxostack/rust-lightning.git?branch=fix-channel-manager-wasm32#bdbfd070a10f46653c396788ffc49e6cb6ebb00f"
+source = "git+https://github.com/utxostack/rust-lightning.git?tag=wasm-v0.0.125#90228d9f849c782ca1f42dbdf3a48538d55536c2"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "mutiny-wasm"
-version = "1.14.6"
+version = "1.15.0"
 dependencies = [
  "anyhow",
  "async-trait",
