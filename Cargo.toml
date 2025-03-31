@@ -15,9 +15,9 @@ opt-level = "z"
 opt-level = "z"
 
 [patch.crates-io]
-lightning-background-processor = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
-lightning = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
-lightning-types = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
-lightning-invoice = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
-lightning-rapid-gossip-sync = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
-lightning-transaction-sync = { git = "https://github.com/utxostack/rust-lightning.git", branch = "fix-channel-manager-wasm32" }
+lightning-background-processor = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }
+lightning = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }
+lightning-types = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }
+lightning-invoice = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }
+lightning-rapid-gossip-sync = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }
+lightning-transaction-sync = { git = "https://github.com/utxostack/rust-lightning.git", tag = "wasm-v0.0.125" }

@@ -2,7 +2,7 @@ cargo-features = ["per-package-target"]
 
 [package]
 name = "mutiny-wasm"
-version = "1.14.6"
+version = "1.15.0"
 edition = "2021"
 authors = ["utxostack"]
 forced-target = "wasm32-unknown-unknown"
@@ -32,7 +32,7 @@ bitcoin = { version = "0.32.2", default-features = false, features = [
   "secp-recovery",
   "rand",
 ] }
-lightning = { version = "0.0.124", default-features = false, features = [
+lightning = { version = "0.0.125", default-features = false, features = [
   "std",
 ] }
 lightning-invoice = { version = "0.32.0" }
