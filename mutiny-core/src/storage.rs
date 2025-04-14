@@ -1209,9 +1209,6 @@ pub(crate) fn list_payment_info<S: MutinyStorage>(
         .collect())
 }
 
-#[derive(Clone)]
-pub struct OnChainStorage<S: MutinyStorage>(pub(crate) S);
-
 pub(crate) fn get_payment_hash_from_key<'a>(key: &'a str, prefix: &str) -> &'a str {
     key.trim_start_matches(prefix)
         .splitn(2, '_') // To support the old format that had `_{node_id}` at the end

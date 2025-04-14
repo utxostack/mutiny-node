@@ -39,6 +39,11 @@ use crate::utils;
 use crate::utils::{now, sleep};
 use crate::TransactionDetails;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
 pub(crate) const FULL_SYNC_STOP_GAP: usize = 150;
 pub(crate) const RESTORE_SYNC_STOP_GAP: usize = 50;
 const PARALLEL_REQUESTS: usize = 10;
@@ -253,7 +258,13 @@ impl<S: MutinyStorage> OnChainWallet<S> {
     pub async fn sync(&self) -> Result<(), MutinyError> {
         // if we need a full sync from a restore
         if self.storage.get(NEED_FULL_SYNC_KEY)?.unwrap_or_default() {
+            let start = Instant::now();
             self.full_sync(RESTORE_SYNC_STOP_GAP).await?;
+            log_info!(
+                self.logger,
+                "Full sync took {} seconds",
+                start.elapsed().as_secs()
+            );
             self.storage.delete(&[NEED_FULL_SYNC_KEY])?;
         }
         // get first wallet lock that only needs to read
