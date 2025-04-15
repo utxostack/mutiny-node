@@ -61,11 +61,7 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{
-    collections::HashMap,
-    ops::Deref,
-    sync::{Arc, RwLock as StdRwLock},
-};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 use url::Url;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
@@ -717,40 +713,36 @@ impl<S: MutinyStorage> NodeManager<S> {
                 if size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
                     log_info!(
                         nm.logger,
-                        "Keychain Size threshold exceeded, spawning simplified compaction task."
+                        "Keychain size threshold exceeded, spawning simplified compaction task."
                     );
-                    if let Ok(new_wallet) = nm.wallet.new_wallet() {
-                        let new_wallet = Arc::new(StdRwLock::new(new_wallet));
+                    if let Ok(mut new_wallet) = nm.wallet.new_wallet() {
                         if let Ok(update) = OnChainWallet::<S>::full_scan(
-                            new_wallet.clone(),
+                            &new_wallet,
                             RESTORE_SYNC_STOP_GAP,
                             nm.esplora.clone(),
-                            nm.logger.clone(),
                         )
                         .await
                         {
                             did_keychain_compact_this_round = true;
-                            if let Ok(mut new_wallet) = new_wallet.try_write() {
-                                if new_wallet
-                                    .apply_update_at(update, Some(now().as_secs()))
-                                    .is_ok()
-                                {
-                                    if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
-                                        if let Some(changeset) = wallet.take_staged() {
-                                            if nm.storage.restore_changes(&changeset).is_ok() {
-                                                wallet = new_wallet;
-                                                log_info!(
-                                                    nm.logger,
-                                                    "Keychain compaction completed successfully."
-                                                );
-                                            }
+                            if new_wallet
+                                .apply_update_at(update, Some(now().as_secs()))
+                                .is_ok()
+                            {
+                                if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
+                                    if let Some(changeset) = wallet.take_staged() {
+                                        if nm.storage.restore_changes(&changeset).is_ok() {
+                                            *wallet = new_wallet;
+                                            log_info!(
+                                                nm.logger,
+                                                "Keychain compaction completed successfully."
+                                            );
                                         }
-                                    } else {
-                                        log_warn!(
-                                            nm.logger,
-                                            "Failed to get wallet lock to apply update"
-                                        );
                                     }
+                                } else {
+                                    log_warn!(
+                                        nm.logger,
+                                        "Failed to get wallet lock to apply update"
+                                    );
                                 }
                             }
                         }
