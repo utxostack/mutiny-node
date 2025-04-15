@@ -58,6 +58,7 @@ pub struct OnChainWallet<S: MutinyStorage> {
     pub(crate) stop: Arc<AtomicBool>,
     logger: Arc<MutinyLogger>,
     ln_event_callback: Option<CommonLnEventCallback>,
+    tr_descriptors: (DescriptorTemplateOut, DescriptorTemplateOut),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -117,8 +118,11 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             None | Some(Ok(None)) => {
                 // we don't have a bdk wallet, create one
                 Wallet::create_with_params(
-                    CreateParams::new(receive_descriptor_template, change_descriptor_template)
-                        .network(network),
+                    CreateParams::new(
+                        receive_descriptor_template.clone(),
+                        change_descriptor_template.clone(),
+                    )
+                    .network(network),
                 )?
             }
             Some(Err(bdk_wallet::LoadError::Mismatch(_))) => {
@@ -126,8 +130,11 @@ impl<S: MutinyStorage> OnChainWallet<S> {
                 db.delete(&[KEYCHAIN_STORE_KEY])?;
                 db.write_data(NEED_FULL_SYNC_KEY.to_string(), true, None)?;
                 Wallet::create_with_params(
-                    CreateParams::new(receive_descriptor_template, change_descriptor_template)
-                        .network(network),
+                    CreateParams::new(
+                        receive_descriptor_template.clone(),
+                        change_descriptor_template.clone(),
+                    )
+                    .network(network),
                 )?
             }
             Some(Err(e)) => {
@@ -145,6 +152,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             stop,
             logger,
             ln_event_callback,
+            tr_descriptors: (receive_descriptor_template, change_descriptor_template),
         })
     }
 
