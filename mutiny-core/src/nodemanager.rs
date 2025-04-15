@@ -31,7 +31,7 @@ use crate::{
 use anyhow::anyhow;
 use async_lock::RwLock;
 use bdk_chain::{BlockId, ConfirmationTime};
-use bdk_wallet::{KeychainKind, LocalOutput};
+use bdk_wallet::{ChangeSet, KeychainKind, LocalOutput};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::Xpriv;
 use bitcoin::blockdata::script;
@@ -656,6 +656,8 @@ impl<S: MutinyStorage> NodeManager<S> {
         utils::spawn(async move {
             let mut synced = false;
             loop {
+                let mut did_keychain_compact_this_round = false;
+
                 // If we are stopped, don't sync
                 if nm.stop.load(Ordering::Relaxed) {
                     return;
@@ -697,53 +699,71 @@ impl<S: MutinyStorage> NodeManager<S> {
                     }
                 }
 
-                // wait for next sync round, checking graceful shutdown check each second.
-                for _ in 0..sync_interval_secs {
-                    if nm.stop.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    sleep(1_000).await;
-                }
-
                 // check keychain size
-                if let Ok(Some(changes)) = nm.storage.read_changes() {
-                    let value = serde_json::to_vec(&changes).unwrap_or_default();
-                    let size = value.len();
-                    if size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
-                        log_info!(
-                                nm.logger,
-                                "Keychain Size threshold exceeded, spawning simplified compaction task."
-                            );
-                        if let Ok(new_wallet) = nm.wallet.new_wallet() {
-                            let new_wallet = Arc::new(StdRwLock::new(new_wallet));
-                            if let Ok(update) = OnChainWallet::<S>::full_scan(
-                                new_wallet.clone(),
-                                RESTORE_SYNC_STOP_GAP,
-                                nm.esplora.clone(),
-                                nm.logger.clone(),
-                            )
-                            .await
-                            {
-                                if let Ok(mut new_wallet) = new_wallet.try_write() {
-                                    if new_wallet
-                                        .apply_update_at(update, Some(now().as_secs()))
-                                        .is_ok()
-                                    {
-                                        if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
-                                            wallet = new_wallet;
-                                            if let Some(changeset) = wallet.take_staged() {
-                                                if nm.storage.restore_changes(&changeset).is_ok() {
-                                                    log_info!(
-                                                        nm.logger,
-                                                        "Keychain compaction completed successfully."
-                                                    );
-                                                }
+                let changes = match nm.storage.read_changes() {
+                    Ok(Some(c)) => c,
+                    Ok(None) => ChangeSet::default(),
+                    Err(e) => {
+                        log_error!(
+                            nm.logger,
+                            "Compaction check: Failed to read changes: {:?}",
+                            e
+                        );
+                        ChangeSet::default()
+                    }
+                };
+                let value = serde_json::to_vec(&changes).unwrap_or_default();
+                let size = value.len();
+                if size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
+                    log_info!(
+                        nm.logger,
+                        "Keychain Size threshold exceeded, spawning simplified compaction task."
+                    );
+                    if let Ok(new_wallet) = nm.wallet.new_wallet() {
+                        let new_wallet = Arc::new(StdRwLock::new(new_wallet));
+                        if let Ok(update) = OnChainWallet::<S>::full_scan(
+                            new_wallet.clone(),
+                            RESTORE_SYNC_STOP_GAP,
+                            nm.esplora.clone(),
+                            nm.logger.clone(),
+                        )
+                        .await
+                        {
+                            did_keychain_compact_this_round = true;
+                            if let Ok(mut new_wallet) = new_wallet.try_write() {
+                                if new_wallet
+                                    .apply_update_at(update, Some(now().as_secs()))
+                                    .is_ok()
+                                {
+                                    if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
+                                        wallet = new_wallet;
+                                        if let Some(changeset) = wallet.take_staged() {
+                                            if nm.storage.restore_changes(&changeset).is_ok() {
+                                                log_info!(
+                                                    nm.logger,
+                                                    "Keychain compaction completed successfully."
+                                                );
                                             }
                                         }
+                                    } else {
+                                        log_warn!(
+                                            nm.logger,
+                                            "Failed to get wallet lock to apply update"
+                                        );
                                     }
                                 }
                             }
                         }
+                    }
+                }
+
+                // wait for next sync round, checking graceful shutdown check each second.
+                if !did_keychain_compact_this_round {
+                    for _ in 0..sync_interval_secs {
+                        if nm.stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        sleep(1_000).await;
                     }
                 }
             }
