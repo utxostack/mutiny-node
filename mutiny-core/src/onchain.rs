@@ -336,34 +336,13 @@ impl<S: MutinyStorage> OnChainWallet<S> {
     }
 
     pub async fn full_sync(&self, gap: usize) -> Result<(), MutinyError> {
-        // get first wallet lock that only needs to read
-        let spks = {
-            if let Ok(wallet) = self.wallet.try_read() {
-                wallet.all_unbounded_spk_iters()
-            } else {
-                log_error!(self.logger, "Could not get wallet lock to sync");
-                return Err(MutinyError::WalletOperationFailed);
-            }
-        };
-
-        let mut request_builder = FullScanRequestBuilder::default();
-        for (kind, pks) in spks.into_iter() {
-            request_builder = request_builder.spks_for_keychain(kind, pks)
-        }
-
-        let FullScanResult {
-            tx_update,
-            last_active_indices,
-            chain_update,
-        } = self
-            .blockchain
-            .full_scan(request_builder, gap, PARALLEL_REQUESTS)
-            .await?;
-        let update = Update {
-            last_active_indices,
-            tx_update,
-            chain: chain_update,
-        };
+        let update = Self::full_scan(
+            self.wallet.clone(),
+            gap,
+            self.blockchain.clone(),
+            self.logger.clone(),
+        )
+        .await?;
 
         // get new wallet lock for writing and apply the update
         for _ in 0..10 {
@@ -853,6 +832,51 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         self.broadcast_transaction(tx).await?;
         log_debug!(self.logger, "Fee bump Transaction broadcast! TXID: {txid}");
         Ok(txid)
+    }
+
+    pub fn new_wallet(&self) -> Result<Wallet, MutinyError> {
+        let wallet = Wallet::create_with_params(
+            CreateParams::new(self.tr_descriptors.0.clone(), self.tr_descriptors.1.clone())
+                .network(self.network),
+        )?;
+        Ok(wallet)
+    }
+
+    pub async fn full_scan(
+        wallet: Arc<RwLock<Wallet>>,
+        gap: usize,
+        blockchain: Arc<AsyncClient>,
+        logger: Arc<MutinyLogger>,
+    ) -> Result<Update, MutinyError> {
+        // get first wallet lock that only needs to read
+        let spks = {
+            if let Ok(wallet) = wallet.try_read() {
+                wallet.all_unbounded_spk_iters()
+            } else {
+                log_error!(logger, "Could not get wallet lock to sync");
+                return Err(MutinyError::WalletOperationFailed);
+            }
+        };
+
+        let mut request_builder = FullScanRequestBuilder::default();
+        for (kind, pks) in spks.into_iter() {
+            request_builder = request_builder.spks_for_keychain(kind, pks)
+        }
+
+        let FullScanResult {
+            tx_update,
+            last_active_indices,
+            chain_update,
+        } = blockchain
+            .full_scan(request_builder, gap, PARALLEL_REQUESTS)
+            .await?;
+        let update = Update {
+            last_active_indices,
+            tx_update,
+            chain: chain_update,
+        };
+
+        Ok(update)
     }
 }
 
