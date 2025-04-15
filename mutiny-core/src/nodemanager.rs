@@ -3,7 +3,9 @@ use crate::ldkstorage::CHANNEL_CLOSURE_PREFIX;
 use crate::logging::LOGGING_KEY;
 use crate::lsp::voltage;
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
+use crate::onchain::RESTORE_SYNC_STOP_GAP;
 use crate::peermanager::PeerManager;
+use crate::utils::now;
 use crate::utils::sleep;
 use crate::MutinyInvoice;
 use crate::MutinyWalletConfig;
@@ -59,10 +61,16 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{
+    collections::HashMap,
+    ops::Deref,
+    sync::{Arc, RwLock as StdRwLock},
+};
 use url::Url;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+
+const KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES: usize = 128 * 1024; // 128KB
 
 // This is the NodeStorage object saved to the DB
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -695,6 +703,48 @@ impl<S: MutinyStorage> NodeManager<S> {
                         return;
                     }
                     sleep(1_000).await;
+                }
+
+                // check keychain size
+                if let Ok(Some(changes)) = nm.storage.read_changes() {
+                    let value = serde_json::to_vec(&changes).unwrap_or_default();
+                    let size = value.len();
+                    if size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
+                        log_info!(
+                                nm.logger,
+                                "Keychain Size threshold exceeded, spawning simplified compaction task."
+                            );
+                        if let Ok(new_wallet) = nm.wallet.new_wallet() {
+                            let new_wallet = Arc::new(StdRwLock::new(new_wallet));
+                            if let Ok(update) = OnChainWallet::<S>::full_scan(
+                                new_wallet.clone(),
+                                RESTORE_SYNC_STOP_GAP,
+                                nm.esplora.clone(),
+                                nm.logger.clone(),
+                            )
+                            .await
+                            {
+                                if let Ok(mut new_wallet) = new_wallet.try_write() {
+                                    if new_wallet
+                                        .apply_update_at(update, Some(now().as_secs()))
+                                        .is_ok()
+                                    {
+                                        if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
+                                            wallet = new_wallet;
+                                            if let Some(changeset) = wallet.take_staged() {
+                                                if nm.storage.restore_changes(&changeset).is_ok() {
+                                                    log_info!(
+                                                        nm.logger,
+                                                        "Keychain compaction completed successfully."
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         });

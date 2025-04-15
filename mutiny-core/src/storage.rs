@@ -674,6 +674,14 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
     }
 
+    /// Restore changeset to the storage
+    fn restore_changes(&self, changeset: &ChangeSet) -> Result<(), MutinyError> {
+        let version = now().as_secs() as u32;
+        let value = serde_json::to_value(changeset)?;
+        let value = VersionedValue { value, version };
+        self.write_data(KEYCHAIN_STORE_KEY.to_string(), value, Some(version))
+    }
+
     /// Spawn background task to run db tasks
     fn spawn<Fut: Task>(&self, _fut: Fut);
 }
