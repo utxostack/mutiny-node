@@ -696,6 +696,7 @@ impl<S: MutinyStorage> NodeManager<S> {
                 }
 
                 // check keychain size
+                let start = Instant::now();
                 let changes = match nm.storage.read_changes() {
                     Ok(Some(c)) => c,
                     Ok(None) => ChangeSet::default(),
@@ -729,7 +730,7 @@ impl<S: MutinyStorage> NodeManager<S> {
                                 .is_ok()
                             {
                                 if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
-                                    if let Some(changeset) = wallet.take_staged() {
+                                    if let Some(changeset) = new_wallet.take_staged() {
                                         if nm.storage.restore_changes(&changeset).is_ok() {
                                             *wallet = new_wallet;
                                             log_info!(
@@ -748,6 +749,11 @@ impl<S: MutinyStorage> NodeManager<S> {
                         }
                     }
                 }
+                log_info!(
+                    nm.logger,
+                    "Keychain compaction took {} seconds",
+                    start.elapsed().as_secs()
+                );
 
                 // wait for next sync round, checking graceful shutdown check each second.
                 if !did_keychain_compact_this_round {
