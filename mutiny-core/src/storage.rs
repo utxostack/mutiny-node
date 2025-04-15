@@ -676,7 +676,18 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
 
     /// Restore changeset to the storage
     fn restore_changes(&self, changeset: &ChangeSet) -> Result<(), MutinyError> {
-        let version = now().as_secs() as u32;
+        let current_timestamp_secs = now().as_secs();
+        let backup_key = format!("{}_backup_{}", KEYCHAIN_STORE_KEY, current_timestamp_secs);
+        let _ = match self.get_data::<VersionedValue>(KEYCHAIN_STORE_KEY) {
+            Ok(Some(versioned)) => self.write_data(backup_key, versioned, None),
+            Ok(None) => Ok(()),
+            Err(e) => {
+                log_error!(self.logger(), "Error writing backup: {:?}", e);
+                Err(e)
+            }
+        };
+
+        let version = current_timestamp_secs as u32;
         let value = serde_json::to_value(changeset)?;
         let value = VersionedValue { value, version };
         self.write_data(KEYCHAIN_STORE_KEY.to_string(), value, Some(version))

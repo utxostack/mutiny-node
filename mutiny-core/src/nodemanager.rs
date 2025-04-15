@@ -736,9 +736,9 @@ impl<S: MutinyStorage> NodeManager<S> {
                                     .is_ok()
                                 {
                                     if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
-                                        wallet = new_wallet;
                                         if let Some(changeset) = wallet.take_staged() {
                                             if nm.storage.restore_changes(&changeset).is_ok() {
+                                                wallet = new_wallet;
                                                 log_info!(
                                                     nm.logger,
                                                     "Keychain compaction completed successfully."
