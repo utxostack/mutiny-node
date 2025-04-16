@@ -709,13 +709,33 @@ impl<S: MutinyStorage> NodeManager<S> {
                         ChangeSet::default()
                     }
                 };
-                let value = serde_json::to_vec(&changes).unwrap_or_default();
-                let size = value.len();
-                if size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
+                let total_size = serde_json::to_vec(&changes).unwrap_or_default().len();
+                log_info!(nm.logger, "Keychain size: {} bytes", total_size);
+                if total_size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
                     log_info!(
                         nm.logger,
-                        "Keychain size threshold exceeded, spawning simplified compaction task."
+                        "Keychain size threshold exceeded {} Bytes, spawning simplified compaction task.",
+                        KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
                     );
+
+                    let local_chain_size = serde_json::to_vec(&changes.local_chain)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    let tx_graph_size = serde_json::to_vec(&changes.tx_graph)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    let indexer_size = serde_json::to_vec(&changes.indexer)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    log_debug!(
+                        nm.logger,
+                        "PRE-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
+                        total_size,
+                        local_chain_size,
+                        tx_graph_size,
+                        indexer_size
+                    );
+
                     if let Ok(mut new_wallet) = nm.wallet.new_wallet() {
                         if let Ok(update) = OnChainWallet::<S>::full_scan(
                             &new_wallet,
@@ -724,11 +744,33 @@ impl<S: MutinyStorage> NodeManager<S> {
                         )
                         .await
                         {
+                            let total_size = serde_json::to_vec(&changes).unwrap_or_default().len();
+                            let local_chain_size = serde_json::to_vec(&changes.local_chain)
+                                .map(|v| v.len())
+                                .unwrap_or(0);
+                            let tx_graph_size = serde_json::to_vec(&changes.tx_graph)
+                                .map(|v| v.len())
+                                .unwrap_or(0);
+                            let indexer_size = serde_json::to_vec(&changes.indexer)
+                                .map(|v| v.len())
+                                .unwrap_or(0);
+                            log_debug!(nm.logger,
+                                "POST-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
+                                total_size,
+                                local_chain_size,
+                                tx_graph_size,
+                                indexer_size
+                            );
+
                             did_keychain_compact_this_round = true;
                             if new_wallet
                                 .apply_update_at(update, Some(now().as_secs()))
                                 .is_ok()
                             {
+                                // Strategy: Try acquiring main lock once.
+                                // - Failure indicates contention. Abort compaction this cycle to ensure we don't overwrite
+                                //   changes from the contending operation (unlike a retry-until-success approach which *would* overwrite).
+                                // - Success indicates no contention detected now; proceed with replace/overwrite.
                                 if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
                                     if let Some(changeset) = new_wallet.take_staged() {
                                         if nm.storage.restore_changes(&changeset).is_ok() {
@@ -742,7 +784,7 @@ impl<S: MutinyStorage> NodeManager<S> {
                                 } else {
                                     log_warn!(
                                         nm.logger,
-                                        "Failed to get wallet lock to apply update"
+                                        "Compaction: Failed to acquire main wallet lock due to contention. Aborting compaction attempt for this cycle."
                                     );
                                 }
                             }
