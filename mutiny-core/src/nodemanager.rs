@@ -26,7 +26,10 @@ use crate::{
 use crate::{gossip::*, scorer::HubPreferentialScorer};
 use crate::{
     node::NodeBuilder,
-    storage::{MutinyStorage, DEVICE_ID_KEY, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY},
+    storage::{
+        IndexItem, MutinyStorage, DEVICE_ID_KEY, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY,
+        ONCHAIN_PREFIX,
+    },
 };
 use anyhow::anyhow;
 use async_lock::RwLock;
@@ -781,12 +784,41 @@ impl<S: MutinyStorage> NodeManager<S> {
                                             );
                                         }
                                     }
+                                    drop(wallet); // drop so we can read from wallet
+
+                                    // update the activity index, just get the list of transactions
+                                    // and insert them into the index, this is done in background so shouldn't
+                                    // block the wallet update
+                                    if let Ok(txs) = nm.wallet.list_transactions(false) {
+                                        let index_items = txs
+                                            .into_iter()
+                                            .map(|t| IndexItem {
+                                                timestamp: match t.confirmation_time {
+                                                    ConfirmationTime::Confirmed {
+                                                        time, ..
+                                                    } => Some(time),
+                                                    ConfirmationTime::Unconfirmed { .. } => None,
+                                                },
+                                                key: format!("{ONCHAIN_PREFIX}{}", t.internal_id),
+                                            })
+                                            .collect::<Vec<_>>();
+
+                                        if let Ok(mut index) =
+                                            nm.storage.activity_index().try_write()
+                                        {
+                                            // remove old-onchain txs
+                                            index.retain(|i| !i.key.starts_with(ONCHAIN_PREFIX));
+                                            index.extend(index_items);
+                                        }
+                                    }
                                 } else {
                                     log_warn!(
                                         nm.logger,
                                         "Compaction: Failed to acquire main wallet lock due to contention. Aborting compaction attempt for this cycle."
                                     );
                                 }
+                            } else {
+                                log_error!(nm.logger, "Keychain compaction failed to apply update");
                             }
                         }
                     }
