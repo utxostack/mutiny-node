@@ -13,7 +13,7 @@ use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::psbt::PsbtUtils;
 use bdk_wallet::template::DescriptorTemplateOut;
 use bdk_wallet::{
-    CreateParams, KeychainKind, LoadParams, LocalOutput, SignOptions, Update, Wallet,
+    ChangeSet, CreateParams, KeychainKind, LoadParams, LocalOutput, SignOptions, Update, Wallet,
 };
 use bitcoin::bip32::{ChildNumber, DerivationPath, Xpriv};
 use bitcoin::consensus::serialize;
@@ -47,6 +47,7 @@ use web_time::Instant;
 pub(crate) const FULL_SYNC_STOP_GAP: usize = 150;
 pub(crate) const RESTORE_SYNC_STOP_GAP: usize = 50;
 const PARALLEL_REQUESTS: usize = 10;
+const KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES: usize = 128 * 1024; // 128KB
 
 #[derive(Clone)]
 pub struct OnChainWallet<S: MutinyStorage> {
@@ -863,34 +864,123 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         Ok(wallet)
     }
 
-    pub async fn full_scan(
-        wallet: &Wallet,
-        gap: usize,
-        blockchain: Arc<AsyncClient>,
-    ) -> Result<Update, MutinyError> {
-        // get first wallet lock that only needs to read
-        let spks = wallet.all_unbounded_spk_iters();
+    pub async fn try_compact_keychain(&self) -> Result<bool, MutinyError> {
+        let start = Instant::now();
 
-        let mut request_builder = FullScanRequestBuilder::default();
-        for (kind, pks) in spks.into_iter() {
-            request_builder = request_builder.spks_for_keychain(kind, pks)
+        let changes = self.storage.read_changes()?.unwrap_or_default();
+        let total_size = serde_json::to_vec(&changes).unwrap_or_default().len();
+        if total_size < KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
+            log_info!(
+                self.logger,
+                "Keychain size {}is below threshold {}, not compacting",
+                total_size,
+                KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
+            );
+            return Ok(false);
         }
+        log_info!(
+            self.logger,
+            "Keychain size threshold exceeded {} Bytes, spawning simplified compaction task.",
+            KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
+        );
+        self.log_keychain_size(&changes);
 
-        let FullScanResult {
-            tx_update,
-            last_active_indices,
-            chain_update,
-        } = blockchain
-            .full_scan(request_builder, gap, PARALLEL_REQUESTS)
-            .await?;
-        let update = Update {
-            last_active_indices,
-            tx_update,
-            chain: chain_update,
-        };
+        let mut new_wallet = self.new_wallet()?;
+        let update = full_scan(&new_wallet, RESTORE_SYNC_STOP_GAP, self.blockchain.clone()).await?;
 
-        Ok(update)
+        new_wallet
+            .apply_update_at(update, Some(now().as_secs()))
+            .map_err(|e| {
+                log_error!(self.logger, "Could not apply wallet update: {e}");
+                MutinyError::Other(anyhow!("Could not apply update: {e}"))
+            })?;
+        let mut wallet = self.wallet.try_write()?;
+        let index = self.storage.activity_index();
+        let mut index = index.try_write()?;
+        let new_changeset = new_wallet.take_staged().ok_or(MutinyError::Other(anyhow!(
+            "Failed to take staged changeset from new wallet"
+        )))?;
+        self.log_keychain_size(&new_changeset);
+        self.storage.restore_changes(&new_changeset)?;
+        *wallet = new_wallet;
+        drop(wallet); // drop so we can read from wallet
+
+        // update the activity index, just get the list of transactions
+        // and insert them into the index
+        let index_items = self
+            .list_transactions(false)?
+            .into_iter()
+            .map(|t| IndexItem {
+                timestamp: match t.confirmation_time {
+                    ConfirmationTime::Confirmed { time, .. } => Some(time),
+                    ConfirmationTime::Unconfirmed { .. } => None,
+                },
+                key: format!("{ONCHAIN_PREFIX}{}", t.internal_id),
+            })
+            .collect::<Vec<_>>();
+
+        // remove old-onchain txs
+        index.retain(|i| !i.key.starts_with(ONCHAIN_PREFIX));
+        index.extend(index_items);
+
+        log_info!(self.logger, "Keychain compaction completed successfully.");
+        log_info!(
+            self.logger,
+            "Keychain compaction took {} seconds",
+            start.elapsed().as_secs()
+        );
+
+        Ok(true)
     }
+
+    fn log_keychain_size(&self, keychain: &ChangeSet) {
+        let total_size = serde_json::to_vec(&keychain).unwrap_or_default().len();
+        let local_chain_size = serde_json::to_vec(&keychain.local_chain)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        let tx_graph_size = serde_json::to_vec(&keychain.tx_graph)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        let indexer_size = serde_json::to_vec(&keychain.indexer)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        log_debug!(self.logger,
+                "PRE-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
+                total_size,
+                local_chain_size,
+                tx_graph_size,
+                indexer_size
+            );
+    }
+}
+
+async fn full_scan(
+    wallet: &Wallet,
+    gap: usize,
+    blockchain: Arc<AsyncClient>,
+) -> Result<Update, MutinyError> {
+    // get first wallet lock that only needs to read
+    let spks = wallet.all_unbounded_spk_iters();
+
+    let mut request_builder = FullScanRequestBuilder::default();
+    for (kind, pks) in spks.into_iter() {
+        request_builder = request_builder.spks_for_keychain(kind, pks)
+    }
+
+    let FullScanResult {
+        tx_update,
+        last_active_indices,
+        chain_update,
+    } = blockchain
+        .full_scan(request_builder, gap, PARALLEL_REQUESTS)
+        .await?;
+    let update = Update {
+        last_active_indices,
+        tx_update,
+        chain: chain_update,
+    };
+
+    Ok(update)
 }
 
 fn get_tr_descriptors_for_extended_key(

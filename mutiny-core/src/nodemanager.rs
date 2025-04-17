@@ -3,9 +3,7 @@ use crate::ldkstorage::CHANNEL_CLOSURE_PREFIX;
 use crate::logging::LOGGING_KEY;
 use crate::lsp::voltage;
 use crate::messagehandler::{CommonLnEvent, CommonLnEventCallback};
-use crate::onchain::RESTORE_SYNC_STOP_GAP;
 use crate::peermanager::PeerManager;
-use crate::utils::now;
 use crate::utils::sleep;
 use crate::MutinyInvoice;
 use crate::MutinyWalletConfig;
@@ -26,15 +24,12 @@ use crate::{
 use crate::{gossip::*, scorer::HubPreferentialScorer};
 use crate::{
     node::NodeBuilder,
-    storage::{
-        IndexItem, MutinyStorage, DEVICE_ID_KEY, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY,
-        ONCHAIN_PREFIX,
-    },
+    storage::{MutinyStorage, DEVICE_ID_KEY, KEYCHAIN_STORE_KEY, NEED_FULL_SYNC_KEY},
 };
 use anyhow::anyhow;
 use async_lock::RwLock;
 use bdk_chain::{BlockId, ConfirmationTime};
-use bdk_wallet::{ChangeSet, KeychainKind, LocalOutput};
+use bdk_wallet::{KeychainKind, LocalOutput};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::bip32::Xpriv;
 use bitcoin::blockdata::script;
@@ -68,8 +63,6 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 use url::Url;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
-
-const KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES: usize = 128 * 1024; // 128KB
 
 // This is the NodeStorage object saved to the DB
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -655,8 +648,6 @@ impl<S: MutinyStorage> NodeManager<S> {
         utils::spawn(async move {
             let mut synced = false;
             loop {
-                let mut did_keychain_compact_this_round = false;
-
                 // If we are stopped, don't sync
                 if nm.stop.load(Ordering::Relaxed) {
                     return;
@@ -699,135 +690,13 @@ impl<S: MutinyStorage> NodeManager<S> {
                 }
 
                 // check keychain size
-                let start = Instant::now();
-                let changes = match nm.storage.read_changes() {
-                    Ok(Some(c)) => c,
-                    Ok(None) => ChangeSet::default(),
+                let did_keychain_compact_this_round = match nm.wallet.try_compact_keychain().await {
+                    Ok(did_keychain_compact_this_round) => did_keychain_compact_this_round,
                     Err(e) => {
-                        log_error!(
-                            nm.logger,
-                            "Compaction check: Failed to read changes: {:?}",
-                            e
-                        );
-                        ChangeSet::default()
+                        log_error!(nm.logger, "Failed to compact keychain: {e}");
+                        false
                     }
                 };
-                let total_size = serde_json::to_vec(&changes).unwrap_or_default().len();
-                log_info!(nm.logger, "Keychain size: {} bytes", total_size);
-                if total_size > KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
-                    log_info!(
-                        nm.logger,
-                        "Keychain size threshold exceeded {} Bytes, spawning simplified compaction task.",
-                        KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
-                    );
-
-                    let local_chain_size = serde_json::to_vec(&changes.local_chain)
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    let tx_graph_size = serde_json::to_vec(&changes.tx_graph)
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    let indexer_size = serde_json::to_vec(&changes.indexer)
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    log_debug!(
-                        nm.logger,
-                        "PRE-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
-                        total_size,
-                        local_chain_size,
-                        tx_graph_size,
-                        indexer_size
-                    );
-
-                    if let Ok(mut new_wallet) = nm.wallet.new_wallet() {
-                        if let Ok(update) = OnChainWallet::<S>::full_scan(
-                            &new_wallet,
-                            RESTORE_SYNC_STOP_GAP,
-                            nm.esplora.clone(),
-                        )
-                        .await
-                        {
-                            let total_size = serde_json::to_vec(&changes).unwrap_or_default().len();
-                            let local_chain_size = serde_json::to_vec(&changes.local_chain)
-                                .map(|v| v.len())
-                                .unwrap_or(0);
-                            let tx_graph_size = serde_json::to_vec(&changes.tx_graph)
-                                .map(|v| v.len())
-                                .unwrap_or(0);
-                            let indexer_size = serde_json::to_vec(&changes.indexer)
-                                .map(|v| v.len())
-                                .unwrap_or(0);
-                            log_debug!(nm.logger,
-                                "POST-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
-                                total_size,
-                                local_chain_size,
-                                tx_graph_size,
-                                indexer_size
-                            );
-
-                            did_keychain_compact_this_round = true;
-                            if new_wallet
-                                .apply_update_at(update, Some(now().as_secs()))
-                                .is_ok()
-                            {
-                                // Strategy: Try acquiring main lock once.
-                                // - Failure indicates contention. Abort compaction this cycle to ensure we don't overwrite
-                                //   changes from the contending operation (unlike a retry-until-success approach which *would* overwrite).
-                                // - Success indicates no contention detected now; proceed with replace/overwrite.
-                                if let Ok(mut wallet) = nm.wallet.wallet.try_write() {
-                                    if let Some(changeset) = new_wallet.take_staged() {
-                                        if nm.storage.restore_changes(&changeset).is_ok() {
-                                            *wallet = new_wallet;
-                                            log_info!(
-                                                nm.logger,
-                                                "Keychain compaction completed successfully."
-                                            );
-                                        }
-                                    }
-                                    drop(wallet); // drop so we can read from wallet
-
-                                    // update the activity index, just get the list of transactions
-                                    // and insert them into the index, this is done in background so shouldn't
-                                    // block the wallet update
-                                    if let Ok(txs) = nm.wallet.list_transactions(false) {
-                                        let index_items = txs
-                                            .into_iter()
-                                            .map(|t| IndexItem {
-                                                timestamp: match t.confirmation_time {
-                                                    ConfirmationTime::Confirmed {
-                                                        time, ..
-                                                    } => Some(time),
-                                                    ConfirmationTime::Unconfirmed { .. } => None,
-                                                },
-                                                key: format!("{ONCHAIN_PREFIX}{}", t.internal_id),
-                                            })
-                                            .collect::<Vec<_>>();
-
-                                        if let Ok(mut index) =
-                                            nm.storage.activity_index().try_write()
-                                        {
-                                            // remove old-onchain txs
-                                            index.retain(|i| !i.key.starts_with(ONCHAIN_PREFIX));
-                                            index.extend(index_items);
-                                        }
-                                    }
-                                } else {
-                                    log_warn!(
-                                        nm.logger,
-                                        "Compaction: Failed to acquire main wallet lock due to contention. Aborting compaction attempt for this cycle."
-                                    );
-                                }
-                            } else {
-                                log_error!(nm.logger, "Keychain compaction failed to apply update");
-                            }
-                        }
-                    }
-                }
-                log_info!(
-                    nm.logger,
-                    "Keychain compaction took {} seconds",
-                    start.elapsed().as_secs()
-                );
 
                 // wait for next sync round, checking graceful shutdown check each second.
                 if !did_keychain_compact_this_round {
