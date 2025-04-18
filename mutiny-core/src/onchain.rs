@@ -47,7 +47,7 @@ use web_time::Instant;
 pub(crate) const FULL_SYNC_STOP_GAP: usize = 150;
 pub(crate) const RESTORE_SYNC_STOP_GAP: usize = 50;
 const PARALLEL_REQUESTS: usize = 10;
-const KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES: usize = 128 * 1024; // 128KB
+const KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES: usize = 256 * 1024; // 256KB
 
 #[derive(Clone)]
 pub struct OnChainWallet<S: MutinyStorage> {
@@ -872,7 +872,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         if total_size < KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES {
             log_info!(
                 self.logger,
-                "Keychain size {}is below threshold {}, not compacting",
+                "Keychain size {} bytes is below threshold {} bytes, not compacting",
                 total_size,
                 KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
             );
@@ -883,7 +883,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
             "Keychain size threshold exceeded {} Bytes, spawning simplified compaction task.",
             KEYCHAIN_COMPACTION_SIZE_THRESHOLD_BYTES
         );
-        self.log_keychain_size(&changes);
+        self.log_keychain_size(&changes, false);
 
         let mut new_wallet = self.new_wallet()?;
         let update = full_scan(&new_wallet, RESTORE_SYNC_STOP_GAP, self.blockchain.clone()).await?;
@@ -900,7 +900,7 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         let new_changeset = new_wallet.take_staged().ok_or(MutinyError::Other(anyhow!(
             "Failed to take staged changeset from new wallet"
         )))?;
-        self.log_keychain_size(&new_changeset);
+        self.log_keychain_size(&new_changeset, true);
         self.storage.restore_changes(&new_changeset)?;
         *wallet = new_wallet;
         drop(wallet); // drop so we can read from wallet
@@ -933,8 +933,8 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         Ok(true)
     }
 
-    fn log_keychain_size(&self, keychain: &ChangeSet) {
-        let total_size = serde_json::to_vec(&keychain).unwrap_or_default().len();
+    fn log_keychain_size(&self, keychain: &ChangeSet, is_post_compaction: bool) {
+        let total_size = serde_json::to_vec(keychain).unwrap_or_default().len();
         let local_chain_size = serde_json::to_vec(&keychain.local_chain)
             .map(|v| v.len())
             .unwrap_or(0);
@@ -944,13 +944,22 @@ impl<S: MutinyStorage> OnChainWallet<S> {
         let indexer_size = serde_json::to_vec(&keychain.indexer)
             .map(|v| v.len())
             .unwrap_or(0);
-        log_debug!(self.logger,
-                "PRE-COMPACTION size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
-                total_size,
-                local_chain_size,
-                tx_graph_size,
-                indexer_size
-            );
+
+        let prefix = if is_post_compaction {
+            "POST-COMPACTION"
+        } else {
+            "PRE-COMPACTION"
+        };
+
+        log_debug!(
+            self.logger,
+            "{} size: {} bytes. Approx component sizes (bytes): LocalChain={}, TxGraph={}, Indexer={}",
+            prefix,
+            total_size,
+            local_chain_size,
+            tx_graph_size,
+            indexer_size
+        );
     }
 }
 
