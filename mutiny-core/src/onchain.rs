@@ -59,6 +59,9 @@ pub struct OnChainWallet<S: MutinyStorage> {
     pub(crate) stop: Arc<AtomicBool>,
     logger: Arc<MutinyLogger>,
     ln_event_callback: Option<CommonLnEventCallback>,
+    /// The Bitcoin output descriptors for the wallet’s keychains:
+    /// 0: receive_descriptor
+    /// 1: change_descriptor
     tr_descriptors: (DescriptorTemplateOut, DescriptorTemplateOut),
 }
 
