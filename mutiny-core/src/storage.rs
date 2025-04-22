@@ -674,6 +674,25 @@ pub trait MutinyStorage: Clone + Sized + Send + Sync + 'static {
         }
     }
 
+    /// Restore changeset to the storage
+    fn restore_changes(&self, changeset: &ChangeSet) -> Result<(), MutinyError> {
+        let current_timestamp_secs = now().as_secs();
+        let backup_key = format!("{}_backup_{}", KEYCHAIN_STORE_KEY, current_timestamp_secs);
+        let _ = match self.get_data::<VersionedValue>(KEYCHAIN_STORE_KEY) {
+            Ok(Some(versioned)) => self.write_data(backup_key, versioned, None),
+            Ok(None) => Ok(()),
+            Err(e) => {
+                log_error!(self.logger(), "Error writing backup: {:?}", e);
+                Err(e)
+            }
+        };
+
+        let version = current_timestamp_secs as u32;
+        let value = serde_json::to_value(changeset)?;
+        let value = VersionedValue { value, version };
+        self.write_data(KEYCHAIN_STORE_KEY.to_string(), value, Some(version))
+    }
+
     /// Spawn background task to run db tasks
     fn spawn<Fut: Task>(&self, _fut: Fut);
 }
@@ -1208,9 +1227,6 @@ pub(crate) fn list_payment_info<S: MutinyStorage>(
         })
         .collect())
 }
-
-#[derive(Clone)]
-pub struct OnChainStorage<S: MutinyStorage>(pub(crate) S);
 
 pub(crate) fn get_payment_hash_from_key<'a>(key: &'a str, prefix: &str) -> &'a str {
     key.trim_start_matches(prefix)

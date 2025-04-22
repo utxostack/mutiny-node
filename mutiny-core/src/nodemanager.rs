@@ -689,12 +689,23 @@ impl<S: MutinyStorage> NodeManager<S> {
                     }
                 }
 
-                // wait for next sync round, checking graceful shutdown check each second.
-                for _ in 0..sync_interval_secs {
-                    if nm.stop.load(Ordering::Relaxed) {
-                        return;
+                // check keychain size
+                let did_keychain_compact_this_round = match nm.wallet.try_compact_keychain().await {
+                    Ok(did_keychain_compact_this_round) => did_keychain_compact_this_round,
+                    Err(e) => {
+                        log_error!(nm.logger, "Failed to compact keychain: {e}");
+                        false
                     }
-                    sleep(1_000).await;
+                };
+
+                // wait for next sync round, checking graceful shutdown check each second.
+                if !did_keychain_compact_this_round {
+                    for _ in 0..sync_interval_secs {
+                        if nm.stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        sleep(1_000).await;
+                    }
                 }
             }
         });
