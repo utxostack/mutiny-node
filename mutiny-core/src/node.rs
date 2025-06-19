@@ -41,10 +41,8 @@ use futures_util::lock::Mutex;
 use hex_conservative::DisplayHex;
 use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet};
 use lightning::ln::channel_state::ChannelDetails;
-use lightning::ln::invoice_utils::{
-    create_invoice_from_channelmanager_and_duration_since_epoch, create_phantom_invoice,
-};
-use lightning::ln::PaymentSecret;
+use lightning::ln::channelmanager::Bolt11InvoiceParameters;
+use lightning::ln::invoice_utils::create_phantom_invoice;
 use lightning::onion_message::messenger::OnionMessenger as LdkOnionMessenger;
 use lightning::routing::scoring::ProbabilisticScoringDecayParameters;
 use lightning::sign::{InMemorySigner, NodeSigner, Recipient};
@@ -55,7 +53,6 @@ use lightning::{
     ln::{
         channelmanager::{PaymentId, PhantomRouteHints, Retry},
         peer_handler::{IgnoringMessageHandler, MessageHandler as LdkMessageHandler},
-        PaymentHash, PaymentPreimage,
     },
     log_debug, log_error, log_info, log_trace, log_warn,
     routing::{
@@ -63,6 +60,7 @@ use lightning::{
         gossip::NodeId,
         router::{DefaultRouter, PaymentParameters, RouteParameters},
     },
+    types::payment::{PaymentHash, PaymentPreimage, PaymentSecret},
     util::{
         config::{ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig},
         logger::Logger,
@@ -75,6 +73,7 @@ use lightning::{
 };
 use lightning_background_processor::process_events_async;
 use lightning_invoice::Bolt11Invoice;
+use lightning_invoice::{Bolt11InvoiceDescription, Description};
 use lightning_liquidity::lsps2::client::LSPS2ClientConfig;
 use lightning_liquidity::{LiquidityClientConfig, LiquidityManager as LDKLSPLiquidityManager};
 
@@ -1430,17 +1429,16 @@ impl<S: MutinyStorage> Node<S> {
         let invoice_res = match route_hints {
             None => {
                 let now = crate::utils::now();
-                create_invoice_from_channelmanager_and_duration_since_epoch(
-                    &self.channel_manager.clone(),
-                    self.keys_manager.clone(),
-                    self.logger.clone(),
-                    self.network.into(),
-                    amount_msat,
+                let description =
+                    Bolt11InvoiceDescription::Direct(Description::new(description).unwrap());
+                let invoice_params = Bolt11InvoiceParameters {
+                    amount_msats: amount_msat,
                     description,
-                    now,
-                    expiry_delta_secs.unwrap_or(3600),
-                    Some(40),
-                )
+                    invoice_expiry_delta_secs: Some(expiry_delta_secs.unwrap_or(3600)),
+                    min_final_cltv_expiry_delta: Some(40),
+                    ..Default::default()
+                };
+                self.channel_manager.create_bolt11_invoice(invoice_params)
             }
             Some(r) => create_phantom_invoice(
                 amount_msat,
@@ -2649,8 +2647,8 @@ mod tests {
     use crate::test_utils::*;
     use bitcoin::secp256k1::PublicKey;
     use lightning::ln::channel_state::ChannelCounterparty;
-    use lightning::ln::features::InitFeatures;
     use lightning::ln::types::ChannelId;
+    use lightning::types::features::InitFeatures;
     use lightning_invoice::Bolt11InvoiceDescription;
     use std::str::FromStr;
 
@@ -2973,7 +2971,7 @@ mod wasm_test {
     use crate::{HTLCStatus, PrivacyLevel};
     use itertools::Itertools;
     use lightning::ln::channelmanager::PaymentId;
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use lightning_invoice::Bolt11InvoiceDescription;
     use std::sync::Arc;
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};

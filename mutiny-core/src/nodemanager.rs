@@ -2148,7 +2148,7 @@ mod tests {
     use bitcoin::{absolute, Network, Transaction, TxOut, Txid};
     use bitcoin::{bip32::Xpriv, transaction::Version, Amount};
     use hex_conservative::DisplayHex;
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use lightning_invoice::Bolt11Invoice;
     use std::collections::HashMap;
     use std::str::FromStr;
