@@ -18,7 +18,7 @@ use lightning::ln::script::ShutdownScript;
 use lightning::offers::invoice::UnsignedBolt12Invoice;
 use lightning::offers::invoice_request::UnsignedInvoiceRequest;
 use lightning::sign::{
-    EntropySource, InMemorySigner, KeyMaterial, NodeSigner, OutputSpender,
+    EntropySource, InMemorySigner, NodeSigner, OutputSpender,
     PhantomKeysManager as LdkPhantomKeysManager, Recipient, SignerProvider,
     SpendableOutputDescriptor,
 };
@@ -115,10 +115,6 @@ impl<S: MutinyStorage> EntropySource for PhantomKeysManager<S> {
 }
 
 impl<S: MutinyStorage> NodeSigner for PhantomKeysManager<S> {
-    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
-        self.inner.get_inbound_payment_key_material()
-    }
-
     fn get_node_id(&self, recipient: Recipient) -> Result<PublicKey, ()> {
         self.inner.get_node_id(recipient)
     }
