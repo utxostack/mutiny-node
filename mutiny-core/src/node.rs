@@ -44,7 +44,6 @@ use lightning::ln::channel_state::ChannelDetails;
 use lightning::ln::invoice_utils::{
     create_invoice_from_channelmanager_and_duration_since_epoch, create_phantom_invoice,
 };
-use lightning::ln::PaymentSecret;
 use lightning::onion_message::messenger::OnionMessenger as LdkOnionMessenger;
 use lightning::routing::scoring::ProbabilisticScoringDecayParameters;
 use lightning::sign::{InMemorySigner, NodeSigner, Recipient};
@@ -62,7 +61,7 @@ use lightning::{
         gossip::NodeId,
         router::{DefaultRouter, PaymentParameters, RouteParameters},
     },
-    types::payment::{PaymentHash, PaymentPreimage},
+    types::payment::{PaymentHash, PaymentPreimage, PaymentSecret},
     util::{
         config::{ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig},
         logger::Logger,
