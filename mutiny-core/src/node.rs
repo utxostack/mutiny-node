@@ -2648,8 +2648,8 @@ mod tests {
     use crate::test_utils::*;
     use bitcoin::secp256k1::PublicKey;
     use lightning::ln::channel_state::ChannelCounterparty;
-    use lightning::ln::features::InitFeatures;
     use lightning::ln::types::ChannelId;
+    use lightning::types::features::InitFeatures;
     use lightning_invoice::Bolt11InvoiceDescription;
     use std::str::FromStr;
 

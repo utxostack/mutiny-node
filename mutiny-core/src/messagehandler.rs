@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use bitcoin::secp256k1::PublicKey;
 use lightning::io::{Error, Read};
-use lightning::ln::features::{InitFeatures, NodeFeatures};
 use lightning::ln::msgs::{DecodeError, LightningError};
 use lightning::ln::peer_handler::CustomMessageHandler;
 use lightning::ln::wire::{CustomMessageReader, Type};
+use lightning::types::features::{InitFeatures, NodeFeatures};
 use lightning::util::ser::{Writeable, Writer};
 use serde::{Deserialize, Serialize};
 
