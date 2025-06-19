@@ -88,7 +88,7 @@ use hex_conservative::{DisplayHex, FromHex};
 use itertools::Itertools;
 pub use lightning;
 use lightning::chain::BestBlock;
-use lightning::ln::PaymentHash;
+use lightning::types::payment::PaymentHash;
 use lightning::util::logger::Logger;
 use lightning::{log_debug, log_error, log_info, log_trace, log_warn};
 pub use lightning_invoice;

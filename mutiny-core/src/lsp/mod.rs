@@ -11,7 +11,7 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Network;
-use lightning::ln::PaymentHash;
+use lightning::types::payment::PaymentHash;
 use lightning_invoice::Bolt11Invoice;
 use lsps::{LspsClient, LspsConfig};
 use serde::{Deserialize, Serialize};

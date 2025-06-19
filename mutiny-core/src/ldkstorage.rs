@@ -797,7 +797,7 @@ mod test {
     use esplora_client::Builder;
     use lightning::routing::scoring::ProbabilisticScoringDecayParameters;
 
-    use lightning::{ln::PaymentHash, routing::router::DefaultRouter};
+    use lightning::{routing::router::DefaultRouter, types::payment::PaymentHash};
     use lightning_transaction_sync::EsploraSyncClient;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;

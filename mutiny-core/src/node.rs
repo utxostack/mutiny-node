@@ -55,7 +55,6 @@ use lightning::{
     ln::{
         channelmanager::{PaymentId, PhantomRouteHints, Retry},
         peer_handler::{IgnoringMessageHandler, MessageHandler as LdkMessageHandler},
-        PaymentHash, PaymentPreimage,
     },
     log_debug, log_error, log_info, log_trace, log_warn,
     routing::{
@@ -63,6 +62,7 @@ use lightning::{
         gossip::NodeId,
         router::{DefaultRouter, PaymentParameters, RouteParameters},
     },
+    types::payment::{PaymentHash, PaymentPreimage},
     util::{
         config::{ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig},
         logger::Logger,
@@ -2973,7 +2973,7 @@ mod wasm_test {
     use crate::{HTLCStatus, PrivacyLevel};
     use itertools::Itertools;
     use lightning::ln::channelmanager::PaymentId;
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use lightning_invoice::Bolt11InvoiceDescription;
     use std::sync::Arc;
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
